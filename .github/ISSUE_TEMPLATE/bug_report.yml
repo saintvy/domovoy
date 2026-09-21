@@ -1,0 +1,22 @@
+name: Bug report
+description: Report a reproducible problem in Domovoy.
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What happened?
+      description: Describe the actual and expected behavior. Do not include personal financial data or credentials.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Use fictional people, amounts and accounts.
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      description: Commit, browser, operating system, and local or hosted installation.

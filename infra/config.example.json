@@ -1,0 +1,17 @@
+{
+  "region": "eu-central-1",
+  "brownieAccountId": "111111111111",
+  "wccAccountId": "222222222222",
+  "brownieVpcCidr": "10.80.0.0/16",
+  "availabilityZones": ["eu-central-1a", "eu-central-1b"],
+  "wccVpcId": "vpc-00000000000000000",
+  "wccVpcCidr": "10.0.0.0/16",
+  "wccRouteTableIds": ["rtb-00000000000000001", "rtb-00000000000000002"],
+  "wccDatabaseSecurityGroupId": "sg-00000000000000000",
+  "databaseHost": "replace-with-real-instance.abcdefghijkl.eu-central-1.rds.amazonaws.com",
+  "databaseName": "brownie",
+  "databaseUser": "brownie_runtime",
+  "invitationSenderEmail": "replace-with-your-verified-ses-email@example.com",
+  "googleClientId": "replace-with-google-client-id.apps.googleusercontent.com",
+  "cognitoDomainPrefix": "brownie-replace-with-unique-name"
+}

@@ -1,0 +1,41 @@
+.price-history-chart {
+  margin: 16px 0;
+  padding: 12px;
+  border: 1px solid var(--line, #deded5);
+  border-radius: 12px;
+}
+.price-history-chart figcaption {
+  font-weight: 700;
+}
+.price-history-chart svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  overflow: visible;
+}
+.price-history-chart text {
+  fill: currentColor;
+  font-size: 21px;
+}
+.price-history-table {
+  overflow-x: auto;
+}
+.price-history-table table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.price-history-table th,
+.price-history-table td {
+  padding: 10px 8px;
+  text-align: left;
+  border-bottom: 1px solid var(--line, #deded5);
+  white-space: nowrap;
+}
+.price-history-recorded {
+  margin-top: 20px;
+  font-size: 13px;
+}
+.price-history-recorded summary {
+  cursor: pointer;
+}

@@ -1,0 +1,8 @@
+{
+  "app": "npx tsx infra/app.ts",
+  "output": "infra/cdk.out",
+  "context": {
+    "@aws-cdk/aws-lambda:useCdkManagedLogGroup": false,
+    "@aws-cdk/aws-ec2:restrictDefaultSecurityGroup": true
+  }
+}

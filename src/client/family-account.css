@@ -1,0 +1,225 @@
+.family-directory-list {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.family-directory-person {
+  padding: 20px;
+}
+.family-person-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+}
+.family-person-name {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: 0;
+  padding: 6px 0;
+}
+.family-person-name strong {
+  overflow-wrap: anywhere;
+}
+.family-person-name:is(button) {
+  cursor: pointer;
+}
+.family-person-name:is(button):hover strong {
+  text-decoration: underline;
+}
+.family-person-dot {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  flex: none;
+}
+.family-person-access {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 18px;
+  min-width: 0;
+}
+.family-person-access select {
+  max-width: 245px;
+  min-width: 160px;
+}
+.family-person-email {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+.family-person-email button {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  text-align: right;
+}
+.family-person-email small {
+  font-size: 12px;
+}
+.family-person-email.is-pending {
+  opacity: 0.58;
+}
+.family-person-obligations {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 24px;
+  margin-top: 16px;
+}
+.family-role-label {
+  font-size: 13px;
+  color: var(--muted, #697077);
+}
+.family-email-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgb(15 25 30 / 0.42);
+  z-index: 120;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+.family-email-dialog {
+  width: min(480px, 100%);
+  max-height: 90vh;
+  overflow: auto;
+  padding: 24px;
+}
+.family-email-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+.family-email-heading h2 {
+  overflow-wrap: anywhere;
+}
+.family-email-dialog form {
+  display: grid;
+  gap: 12px;
+}
+.family-email-dialog .field input {
+  width: 100%;
+  box-sizing: border-box;
+}
+.family-person-name:focus-visible,
+.family-person-email button:focus-visible {
+  outline: 2px solid var(--accent, #38665d);
+  outline-offset: 4px;
+}
+.family-person-edit {
+  padding-bottom: 20px;
+  margin-bottom: 20px;
+  border-bottom: 1px solid var(--border, #e0e5e2);
+}
+.family-person-edit input[type='color'] {
+  height: 38px;
+  padding: 3px;
+}
+.family-email-dialog > .field {
+  margin-bottom: 18px;
+}
+.family-directory-list {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: flex-start;
+}
+.family-directory-person {
+  box-sizing: border-box;
+  flex: 0 1 var(--family-card-width, 640px);
+  width: var(--family-card-width, 640px);
+  max-width: 100%;
+  min-width: 0;
+  margin: 0;
+}
+.family-person-row {
+  flex-wrap: wrap;
+}
+.family-person-access {
+  flex-wrap: wrap;
+  max-width: 100%;
+}
+.family-group-toggle svg {
+  flex: none;
+  transition: transform 0.15s ease;
+}
+.family-person-access select {
+  flex: none;
+}
+.family-header-probe {
+  position: fixed !important;
+  top: 0;
+  left: 0;
+  visibility: hidden !important;
+  pointer-events: none !important;
+  contain: layout style;
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: center !important;
+  gap: 20px !important;
+  width: max-content !important;
+  max-width: none !important;
+  white-space: nowrap !important;
+}
+.family-header-probe .family-person-name,
+.family-header-probe .family-person-access,
+.family-header-probe .family-person-email {
+  width: max-content !important;
+  max-width: none !important;
+  flex: none !important;
+  flex-wrap: nowrap !important;
+}
+.family-header-probe .family-person-access {
+  gap: 18px !important;
+}
+.family-header-probe .family-person-access select {
+  flex: none !important;
+  width: auto !important;
+  min-width: 160px !important;
+  max-width: 245px !important;
+}
+@media (max-width: 760px) {
+  .family-person-row {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .family-person-access {
+    width: 100%;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+  .family-person-email {
+    align-items: flex-start;
+  }
+  .family-person-email button {
+    text-align: left;
+  }
+  .family-person-access select {
+    max-width: 100%;
+    flex: 1;
+  }
+  .family-person-obligations {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+  .family-directory-person {
+    padding: 16px;
+  }
+  .family-email-backdrop {
+    padding: 12px;
+  }
+  .family-email-dialog {
+    padding: 18px;
+  }
+}

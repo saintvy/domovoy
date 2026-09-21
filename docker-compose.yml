@@ -1,0 +1,20 @@
+name: brownie-local
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: brownie_local
+      POSTGRES_DB: brownie_local
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Run node scripts/dev-db.mjs up}
+    ports:
+      - '127.0.0.1:5434:5432'
+    volumes:
+      - brownie-postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U brownie_local -d brownie_local']
+      interval: 2s
+      timeout: 3s
+      retries: 30
+    restart: 'no'
+volumes:
+  brownie-postgres:

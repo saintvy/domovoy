@@ -1,0 +1,5 @@
+{
+  "PeeringConnectionId": "pcx-REPLACE",
+  "DatabasePassword": "REPLACE-WITH-A-NEW-LONG-RANDOM-PASSWORD",
+  "GoogleClientSecret": "REPLACE-WITH-GOOGLE-OAUTH-CLIENT-SECRET"
+}

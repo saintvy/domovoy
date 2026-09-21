@@ -1,0 +1,14 @@
+name: Feature request
+description: Propose an improvement to household expense tracking.
+body:
+  - type: textarea
+    id: need
+    attributes:
+      label: What problem would this solve?
+      description: Describe a concrete household workflow and the desired outcome.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior and alternatives

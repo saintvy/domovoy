@@ -1,0 +1,27 @@
+.lifecycle-policy {
+  border: 0;
+  margin: 16px 0;
+  padding: 0;
+}
+.lifecycle-policy legend {
+  font-weight: 700;
+}
+.lifecycle-policy-choice {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin: 12px 0;
+  cursor: pointer;
+}
+.lifecycle-policy-choice input {
+  flex-shrink: 0;
+  margin-top: 4px;
+}
+.lifecycle-policy-choice span {
+  display: grid;
+  gap: 4px;
+}
+.lifecycle-policy-choice small {
+  font-weight: 400;
+  line-height: 1.45;
+}

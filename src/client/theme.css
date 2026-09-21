@@ -1,0 +1,351 @@
+button.summary-card {
+  text-align: left;
+  transition:
+    border-color 0.15s,
+    box-shadow 0.15s;
+}
+button.summary-card:hover {
+  border-color: var(--green);
+  box-shadow: 0 3px 12px #17211d0c;
+}
+.theme-options {
+  border: 0;
+  padding: 0;
+  margin: 0 0 14px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.theme-options legend {
+  margin-bottom: 14px;
+  font-size: 12px;
+}
+.theme-choice {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  cursor: pointer;
+  flex: 1;
+  min-width: 160px;
+}
+.theme-choice:has(input:checked) {
+  border-color: var(--green);
+  box-shadow: inset 0 0 0 1px var(--green);
+}
+.theme-choice input {
+  accent-color: var(--green);
+}
+.theme-swatch {
+  width: 23px;
+  height: 23px;
+  margin-left: auto;
+  border: 1px solid #819187;
+  border-radius: 50%;
+}
+.theme-swatch.light {
+  background: linear-gradient(90deg, #f6f3ec 50%, #fffefb 50%);
+}
+.theme-swatch.dark {
+  background: linear-gradient(90deg, #10291f 50%, #1c3b2e 50%);
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --canvas: #10231b;
+  --paper: #183127;
+  --ink: #e5eee8;
+  --muted: #a2b6aa;
+  --line: #335045;
+  --border: var(--line);
+  --blue: #92cfad;
+  --green: #92cfad;
+  --accent: #92cfad;
+  --dark: #0d2018;
+  --surface-raised: #203e31;
+  --surface-hover: #284c3c;
+  background: var(--canvas);
+  color: var(--ink);
+}
+:root[data-theme='dark'] body {
+  background: var(--canvas);
+  color: var(--ink);
+}
+:root[data-theme='dark']
+  :is(
+    .panel,
+    .summary-card,
+    .modal,
+    .month-picker,
+    .obligation-icon-picker,
+    .obligation-icon-close,
+    .obligation-icon-footer button,
+    .obligation-icon-trigger,
+    .shell-update,
+    .match-candidate
+  ) {
+  background: var(--paper);
+  color: var(--ink);
+  border-color: var(--line);
+}
+:root[data-theme='dark']
+  :is(
+    .topbar,
+    .expense-table-head,
+    .field input[readonly],
+    .obligation-icon-search
+  ) {
+  background: var(--canvas);
+  border-color: var(--line);
+}
+:root[data-theme='dark'] :is(.workspace, .auth-form-wrap) {
+  background: var(--canvas);
+}
+:root[data-theme='dark']
+  :is(
+    .summary-card.attention,
+    .detail-grid,
+    .date-tile,
+    .service-icon,
+    .soft-icon,
+    .payment-symbol,
+    .history-dot,
+    .badge-soft,
+    .count-pill,
+    .family-card,
+    .notice,
+    .draft-banner,
+    .upload-zone,
+    .upload-icon,
+    .large-icon,
+    .wizard-steps b,
+    .recovery-codes,
+    .match-suggestions,
+    .payment-currency-note,
+    .beneficiary-options label
+  ) {
+  background: var(--surface-raised);
+  border-color: var(--line);
+  color: var(--muted);
+}
+:root[data-theme='dark']
+  :is(
+    .expense-row:hover,
+    .payment-row:hover,
+    .upcoming-item:hover,
+    .icon-button:hover,
+    .tabs button:hover,
+    .obligation-icon-choice:hover,
+    .upload-zone:hover
+  ) {
+  background: var(--surface-hover);
+  color: var(--ink);
+}
+:root[data-theme='dark']
+  :is(
+    .button.secondary,
+    .field input,
+    .field select,
+    .field textarea,
+    .family-person-access select
+  ) {
+  background: var(--canvas);
+  color: var(--ink);
+  border-color: var(--line);
+}
+:root[data-theme='dark'] .button.primary {
+  background: #91d0ab;
+  color: #10291f;
+  box-shadow: none;
+}
+:root[data-theme='dark'] .button.primary:hover {
+  background: #b0e2c5;
+}
+:root[data-theme='dark'] .button.secondary:hover {
+  background: var(--surface-hover);
+}
+:root[data-theme='dark']
+  :is(
+    .text-button,
+    .metric-link,
+    .shell-update > button:not(.icon-button),
+    .obligation-icon-footer button,
+    .family-group-toggle
+  ) {
+  color: #a6dabd;
+}
+:root[data-theme='dark']
+  :is(
+    .breadcrumbs strong,
+    .empty-state h3,
+    .family-card h3,
+    .field,
+    .checkbox-row,
+    .obligation-icon-choice,
+    .obligation-icon-tabs button,
+    .search-box input
+  ) {
+  color: var(--ink);
+}
+:root[data-theme='dark']
+  :is(
+    .summary-label,
+    .metric-note,
+    .metric-unit,
+    .breadcrumbs,
+    .connection-status,
+    .icon-button,
+    .page-heading p,
+    .panel-heading p,
+    .service-cell small,
+    .due-cell,
+    .amount-cell small,
+    .table-footer,
+    .side-description,
+    .upcoming-item small,
+    .page-footer,
+    .simple-row small,
+    .payment-row small,
+    .history-row small,
+    .history-row time,
+    .field small,
+    .modal-subtitle,
+    .detail-grid small,
+    .draft-card small,
+    .draft-card details,
+    .help-step p,
+    .family-card p,
+    .person-card p,
+    .empty-state,
+    .all-paid p,
+    .chart-month,
+    .chart-legend,
+    .product-tabs button,
+    .obligation-beneficiaries,
+    .obligation-icon-help,
+    .obligation-icon-search input,
+    .obligation-icon-search,
+    .restricted-period,
+    .lease-controls,
+    .auth-form > p,
+    .obligation-icon-tabs button,
+    .obligation-icon-empty
+  ) {
+  color: var(--muted);
+}
+:root[data-theme='dark']
+  :is(
+    .tabs button.selected,
+    .product-tabs button[aria-selected='true'],
+    .obligation-icon-tabs button[aria-selected='true'],
+    .obligation-icon-choice.is-selected,
+    .match-candidate.selected
+  ) {
+  background: #2b5140;
+  color: #c5edd5;
+  border-color: #7aba94;
+}
+:root[data-theme='dark']
+  :is(
+    .expense-row,
+    .payment-row,
+    .simple-row,
+    .history-row,
+    .panel-heading,
+    .table-footer,
+    .tabs,
+    .modal-actions,
+    .person-services button,
+    .family-group-toggle,
+    .detail-actions,
+    .settings-section,
+    .price-history-chart,
+    .price-history-table td,
+    .price-history-table th,
+    .chart-data td,
+    .chart-data th,
+    .draft-card,
+    .obligation-icon-header,
+    .obligation-icon-tabs,
+    .obligation-icon-footer,
+    .form-divider,
+    .family-person-edit,
+    .restricted-service,
+    .search-box,
+    .obligation-icon-choice,
+    .upload-zone,
+    .page-footer
+  ) {
+  border-color: var(--line);
+}
+:root[data-theme='dark'] .form-divider {
+  background: var(--line);
+}
+:root[data-theme='dark']
+  :is(.chart-data, .expense-table-head, .family-role-label) {
+  color: var(--muted);
+}
+:root[data-theme='dark'] .upcoming-item {
+  border-color: var(--line);
+}
+:root[data-theme='dark'] .chart-track {
+  background-image: linear-gradient(to top, var(--line) 1px, transparent 1px);
+}
+:root[data-theme='dark'] .metric-icon.blue {
+  background: #263d50;
+  color: #adcbec;
+}
+:root[data-theme='dark'] .metric-icon.mint {
+  background: #264b37;
+  color: #b1dfba;
+}
+:root[data-theme='dark'] .metric-icon.yellow {
+  background: #49452a;
+  color: #ead597;
+}
+:root[data-theme='dark'] .metric-icon.coral {
+  background: #50392f;
+  color: #e7b59b;
+}
+:root[data-theme='dark'] .status.green {
+  background: #284937;
+  color: #b0dab5;
+}
+:root[data-theme='dark'] .status.red {
+  background: #50382e;
+  color: #efba9f;
+}
+:root[data-theme='dark'] .status.amber {
+  background: #49442b;
+  color: #e9d598;
+}
+:root[data-theme='dark'] .status.neutral {
+  background: #344538;
+  color: #c6d1b5;
+}
+:root[data-theme='dark'] .notice.danger {
+  background: #4b302c;
+  color: #fac7b9;
+  border-color: #765047;
+}
+:root[data-theme='dark'] .danger-text {
+  color: #fac7b9 !important;
+}
+:root[data-theme='dark'] input::placeholder,
+:root[data-theme='dark'] textarea::placeholder {
+  color: #90a699;
+}
+:root[data-theme='dark'] :is(button, a, input, select, textarea):focus-visible {
+  outline-color: #9dddba;
+}
+:root[data-theme='dark'] ::selection {
+  background: #406d54;
+  color: #fff;
+}
+:root[data-theme='dark'] .modal-backdrop,
+:root[data-theme='dark'] .family-email-backdrop,
+:root[data-theme='dark'] .obligation-icon-overlay {
+  background: #06140dcc;
+}

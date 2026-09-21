@@ -1,0 +1,8 @@
+{
+  "apiBaseUrl": "/api",
+  "cognitoDomain": "https://YOUR-DOMAIN.auth.eu-central-1.amazoncognito.com",
+  "cognitoClientId": "YOUR-LOCAL-COGNITO-APP-CLIENT-ID",
+  "cognitoUserPoolId": "eu-central-1_YOURPOOL",
+  "cognitoRedirectUri": "http://127.0.0.1:5173/",
+  "region": "eu-central-1"
+}

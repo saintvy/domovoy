@@ -1,0 +1,74 @@
+{
+  "name": "domovoy",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "dev:client": "vite --host 127.0.0.1",
+    "dev:api": "tsx scripts/dev-api.ts",
+    "dev:maintenance": "node scripts/local-maintenance.mjs",
+    "preview": "vite preview --host 127.0.0.1 --port 4173 --strictPort",
+    "build": "tsc --noEmit && vite build",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:quick": "vitest run --exclude tests/domain-scale.test.ts",
+    "test:local": "vitest run tests/local-development.test.ts && playwright test e2e/aws-local.spec.ts",
+    "test:e2e": "playwright test",
+    "test:pwa": "npm run build && playwright test --config playwright.pwa.config.ts",
+    "deploy:check": "npm run build && tsc -p infra/tsconfig.json --noEmit && node scripts/check-infra.mjs",
+    "infra": "cdk --app \"npx tsx infra/app.ts\"",
+    "deploy": "tsx infra/deploy.ts",
+    "test:scale": "vitest run tests/domain-scale.test.ts",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
+  },
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.1130.0",
+    "@aws-sdk/client-sesv2": "^3.1132.0",
+    "dexie": "^4.0.11",
+    "lucide-react": "^0.468.0",
+    "pg": "^8.23.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "zod": "^3.24.2"
+  },
+  "devDependencies": {
+    "@aws-sdk/client-cloudformation": "^3.1130.0",
+    "@aws-sdk/client-sts": "^3.1130.0",
+    "@aws-sdk/credential-providers": "^3.1130.0",
+    "@electric-sql/pglite": "^0.5.8",
+    "@playwright/test": "^1.63.0",
+    "@types/aws-lambda": "^8.10.163",
+    "@types/node": "^22.15.0",
+    "@types/pg": "^8.23.1",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@vitejs/plugin-react": "^4.4.0",
+    "aws-cdk": "^2.1141.0",
+    "aws-cdk-lib": "^2.269.0",
+    "aws-jwt-verify": "^5.2.1",
+    "cdk-assets": "^4.7.3",
+    "constructs": "^10.8.1",
+    "esbuild": "^0.28.2",
+    "prettier": "^3.9.6",
+    "tsx": "^4.23.13",
+    "typescript": "^5.8.3",
+    "vite": "^6.3.0",
+    "vitest": "^3.1.0"
+  },
+  "description": "Recurring household expenses with shared access, multicurrency accounting and an auditable payment history.",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/saintvy/domovoy.git"
+  },
+  "homepage": "https://github.com/saintvy/domovoy#readme",
+  "bugs": {
+    "url": "https://github.com/saintvy/domovoy/issues"
+  },
+  "engines": {
+    "node": ">=22.20.0"
+  }
+}

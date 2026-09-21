@@ -1,0 +1,15 @@
+node_modules/
+dist/
+tmp/
+legacy/
+.wrangler/
+coverage/
+test-results/
+playwright-report/
+cdk.out/
+infra/cdk.out/
+infra/*.local.json
+.env*
+.dev.vars*
+package-lock.json
+LICENSE

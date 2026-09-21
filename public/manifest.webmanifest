@@ -1,0 +1,17 @@
+{
+  "name": "Домовой — семейные расходы",
+  "short_name": "Домовой",
+  "lang": "ru",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#F6F3EC",
+  "theme_color": "#172e25",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}
