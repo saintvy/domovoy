@@ -1,5 +1,8 @@
 # AWS deployment
 
+The maintained installation is available at [domovoy.click](https://domovoy.click/).
+Its former CloudFront hostname redirects to this canonical HTTPS address.
+
 Domovoy deploys a static frontend and a serverless API. The supplied CDK templates
 expect an existing PostgreSQL 16 RDS instance in a separate AWS account and the
 same region. They do not provision the database host. Read the

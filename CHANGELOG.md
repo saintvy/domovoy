@@ -29,6 +29,12 @@ The npm package version is an internal build identifier, not the product-specifi
 
 ## 2026-09-21
 
+### Website
+
+- Publish the application at [domovoy.click](https://domovoy.click/) with HTTPS,
+  DNS aliases and matching OAuth/API configuration. The former CloudFront
+  hostname redirects to the new address.
+
 ### Added
 
 - Backfill already-due, unpaid charges when an active automatic payment schedule

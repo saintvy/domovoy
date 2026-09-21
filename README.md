@@ -5,6 +5,8 @@
 [![CI](https://github.com/saintvy/domovoy/actions/workflows/ci.yml/badge.svg)](https://github.com/saintvy/domovoy/actions/workflows/ci.yml)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 
+**[Open Domovoy](https://domovoy.click/)**
+
 Domovoy helps families track subscriptions, rent, utilities and other recurring
 commitments. It keeps charges, payments, refunds and unused credit separate, so
 the household can see what is due, who benefits and who is responsible.
