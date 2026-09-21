@@ -6,6 +6,13 @@ The npm package version is an internal build identifier, not the product-specifi
 
 ## Unreleased
 
+### Deployment
+
+- Support an optional canonical website domain with a validated ACM certificate,
+  CloudFront HTTPS, Route 53 IPv4/IPv6 aliases and a redirect from the former hostname.
+- Keep Cognito callbacks, API CORS, invitation links and runtime configuration
+  consistent with the canonical origin.
+
 ### Repository
 
 - Adopt Domovoy as the official project and package name.

@@ -17,7 +17,7 @@
     "test:local": "vitest run tests/local-development.test.ts && playwright test e2e/aws-local.spec.ts",
     "test:e2e": "playwright test",
     "test:pwa": "npm run build && playwright test --config playwright.pwa.config.ts",
-    "deploy:check": "npm run build && tsc -p infra/tsconfig.json --noEmit && node scripts/check-infra.mjs",
+    "deploy:check": "npm run build && tsc -p infra/tsconfig.json --noEmit && node scripts/check-infra.mjs && tsx scripts/check-custom-domain.ts",
     "infra": "cdk --app \"npx tsx infra/app.ts\"",
     "deploy": "tsx infra/deploy.ts",
     "test:scale": "vitest run tests/domain-scale.test.ts",

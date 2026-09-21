@@ -102,8 +102,39 @@ flow, PKCE, `openid email profile`, and exact callback/logout URLs.
 The deployment publishes public `runtime-config.json` after the frontend assets.
 It contains API and Cognito identifiers, never a client secret. Test a complete
 real Google login and callback: reaching the consent screen alone is insufficient.
-Configure a custom domain only after acquiring it and setting up DNS/TLS; this
-repository does not assume ownership of `domovoy.com`.
+
+### Custom website domain
+
+An optional `customDomain` object in the private deployment configuration makes
+an owned domain the canonical frontend origin:
+
+```json
+{
+  "customDomain": {
+    "domainName": "app.example.com",
+    "hostedZoneId": "Z0123456789",
+    "certificateArn": "arn:aws:acm:us-east-1:111111111111:certificate/00000000-0000-0000-0000-000000000000"
+  }
+}
+```
+
+Use a public hosted zone for that domain in the application account. Request an
+ACM certificate for the exact hostname in **us-east-1**, create its DNS validation
+CNAME in Route 53, and wait for `ISSUED` before executing the application change
+set. Keep the validation record for managed certificate renewal. The certificate
+is managed separately and imported by ARN, because CloudFront requires its
+certificate in us-east-1 while the application stack runs in another region.
+
+The application stack adds the CloudFront alias and Route 53 A/AAAA alias records,
+uses TLS 1.2 or later, and updates the Cognito production callback/logout URLs,
+API CORS, server origin and public runtime configuration together. A viewer-request
+function redirects the former CloudFront hostname to the canonical HTTPS hostname,
+preserving paths and query values. Localhost authentication remains separate.
+The Google provider's `/oauth2/idpresponse` callback stays on the same Cognito domain.
+
+After deployment, verify DNS, HTTPS, the former-host redirect, the new runtime
+callback, API preflight and the authorization redirect to Google. An existing
+browser session belongs to its previous origin; sign in again on the new domain.
 
 ## Invitation email
 

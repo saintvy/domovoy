@@ -19,6 +19,12 @@ export interface InfraConfig {
   invitationSenderEmail?: string;
   googleClientId: string;
   cognitoDomainPrefix: string;
+  /** Optional canonical website domain; the ACM certificate must be in us-east-1. */
+  customDomain?: {
+    domainName: string;
+    hostedZoneId: string;
+    certificateArn: string;
+  };
 }
 
 function cidrBounds(cidr: string): [number, number] {
@@ -97,6 +103,31 @@ export function validateConfig(config: InfraConfig): InfraConfig {
     !/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(config.cognitoDomainPrefix)
   )
     throw new Error('Invalid Cognito domain prefix');
+  if (config.customDomain) {
+    const { domainName, hostedZoneId, certificateArn } = config.customDomain;
+    if (
+      typeof domainName !== 'string' ||
+      domainName.length > 253 ||
+      !/^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/.test(
+        domainName,
+      )
+    )
+      throw new Error(
+        'Use a lowercase DNS hostname without a scheme, path or wildcard',
+      );
+    if (!/^Z[A-Z0-9]+$/.test(hostedZoneId))
+      throw new Error(
+        'Supply the public Route 53 hosted zone ID without /hostedzone/',
+      );
+    if (
+      !new RegExp(
+        `^arn:aws:acm:us-east-1:${config.brownieAccountId}:certificate/[a-f0-9-]{36}$`,
+      ).test(certificateArn)
+    )
+      throw new Error(
+        'CloudFront requires an ACM certificate in us-east-1 in the application account',
+      );
+  }
   return config;
 }
 

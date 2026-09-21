@@ -17,6 +17,9 @@ import * as s3deploy from 'aws-cdk-lib/aws-s3-deployment';
 import * as s3notifications from 'aws-cdk-lib/aws-s3-notifications';
 import * as cloudfront from 'aws-cdk-lib/aws-cloudfront';
 import * as origins from 'aws-cdk-lib/aws-cloudfront-origins';
+import * as acm from 'aws-cdk-lib/aws-certificatemanager';
+import * as route53 from 'aws-cdk-lib/aws-route53';
+import * as route53Targets from 'aws-cdk-lib/aws-route53-targets';
 import * as cognito from 'aws-cdk-lib/aws-cognito';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as nodejs from 'aws-cdk-lib/aws-lambda-nodejs';
@@ -27,6 +30,7 @@ import { HttpLambdaIntegration } from 'aws-cdk-lib/aws-apigatewayv2-integrations
 import * as events from 'aws-cdk-lib/aws-events';
 import * as eventTargets from 'aws-cdk-lib/aws-events-targets';
 import type { InfraConfig } from './config';
+import { canonicalDomainRedirectCode } from './canonical-domain';
 
 const networkExport = (key: string) => `BrownieNetwork:${key}`;
 function tag(stack: Stack, config: InfraConfig) {
@@ -297,10 +301,44 @@ export class BrownieAppStack extends Stack {
         },
       },
     );
+    const customDomain = config.customDomain;
+    const canonicalRedirect = customDomain
+      ? new cloudfront.Function(this, 'CanonicalDomainRedirect', {
+          runtime: cloudfront.FunctionRuntime.JS_2_0,
+          code: cloudfront.FunctionCode.fromInline(
+            canonicalDomainRedirectCode(customDomain.domainName),
+          ),
+          comment:
+            'Send the former CloudFront hostname to the canonical Domovoy origin',
+        })
+      : undefined;
     const distribution = new cloudfront.Distribution(this, 'Distribution', {
+      ...(customDomain
+        ? {
+            domainNames: [customDomain.domainName],
+            certificate: acm.Certificate.fromCertificateArn(
+              this,
+              'WebsiteCertificate',
+              customDomain.certificateArn,
+            ),
+            minimumProtocolVersion:
+              cloudfront.SecurityPolicyProtocol.TLS_V1_2_2021,
+            sslSupportMethod: cloudfront.SSLMethod.SNI,
+          }
+        : {}),
       defaultRootObject: 'index.html',
       priceClass: cloudfront.PriceClass.PRICE_CLASS_100,
       defaultBehavior: {
+        ...(canonicalRedirect
+          ? {
+              functionAssociations: [
+                {
+                  function: canonicalRedirect,
+                  eventType: cloudfront.FunctionEventType.VIEWER_REQUEST,
+                },
+              ],
+            }
+          : {}),
         origin: origins.S3BucketOrigin.withOriginAccessControl(site),
         viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
         responseHeadersPolicy: headers,
@@ -320,7 +358,30 @@ export class BrownieAppStack extends Stack {
         ttl: Duration.seconds(0),
       })),
     });
-    const origin = `https://${distribution.distributionDomainName}`;
+    if (customDomain) {
+      const zone = route53.HostedZone.fromHostedZoneAttributes(
+        this,
+        'WebsiteZone',
+        {
+          hostedZoneId: customDomain.hostedZoneId,
+          zoneName: customDomain.domainName,
+        },
+      );
+      const target = route53.RecordTarget.fromAlias(
+        new route53Targets.CloudFrontTarget(distribution),
+      );
+      new route53.ARecord(this, 'WebsiteIPv4', {
+        zone,
+        recordName: customDomain.domainName,
+        target,
+      });
+      new route53.AaaaRecord(this, 'WebsiteIPv6', {
+        zone,
+        recordName: customDomain.domainName,
+        target,
+      });
+    }
+    const origin = `https://${customDomain?.domainName ?? distribution.distributionDomainName}`;
     const pool = new cognito.UserPool(this, 'UserPool', {
       selfSignUpEnabled: false,
       signInAliases: { email: true },
