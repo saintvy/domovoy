@@ -3,6 +3,7 @@ import {
   applyCommands,
   createEmptyState,
   decimalRate,
+  effectiveReminderSettings,
   householdToday,
   isISODate,
   requiredExchangeRates,
@@ -21,6 +22,13 @@ import {
 } from './identity';
 import type { ApiRequest, BackupService } from './application';
 import { authorizeFamilyCommands } from './family-permissions';
+import {
+  familyReportTime,
+  nextTelegramReportAt,
+  syncMemberTelegramSchedule,
+  validateDailyReportTime,
+  type TelegramReportPublisher,
+} from './telegram-reminders';
 
 export interface InvitationMessage {
   id: string;
@@ -30,7 +38,7 @@ export interface InvitationMessage {
   url: string;
   expiresAt: number;
 }
-export interface FamilyServices {
+export interface FamilyServices extends TelegramReportPublisher {
   clock?: () => number;
   appOrigin: string;
   sendInvitation?: (message: InvitationMessage) => Promise<void>;
@@ -40,6 +48,7 @@ export interface FamilyServices {
     overrides?: ExchangeRate[],
   ) => Promise<ExchangeRate[]>;
   backups?: (familyId: string) => BackupService;
+  telegramBotUsername?: string;
 }
 const roles = ['editor', 'own_editor', 'deleter', 'observer'];
 const editing = new Set(['admin', 'editor', 'own_editor', 'deleter']);
@@ -132,6 +141,47 @@ export class FamilyApplication {
         await client.query(
           'UPDATE brownie_family_sessions SET revoked_at=$1 WHERE id=$2',
           [this.now(), session.id],
+        );
+        return { ok: true };
+      }
+      if (path === '/telegram/link' && method === 'POST') {
+        const token = sessionToken(),
+          expiresAt = this.now() + 10 * 60000;
+        await client.query(
+          'UPDATE brownie_telegram_link_tokens SET consumed_at=$1 WHERE subject=$2 AND consumed_at IS NULL',
+          [this.now(), identity.subject],
+        );
+        await client.query(
+          'INSERT INTO brownie_telegram_link_tokens(token_hash,subject,family_id,created_at,expires_at) VALUES($1,$2,$3,$4,$5)',
+          [digest(token), identity.subject, family.id, this.now(), expiresAt],
+        );
+        const username = (
+          this.services.telegramBotUsername ?? 'domovoy_reminder_bot'
+        ).replace(/^@/, '');
+        await this.audit(
+          client,
+          family.id,
+          identity.subject,
+          'telegram.link-created',
+          {},
+        );
+        return { url: `https://t.me/${username}?start=${token}`, expiresAt };
+      }
+      if (path === '/telegram/link' && method === 'DELETE') {
+        await client.query(
+          'DELETE FROM brownie_telegram_links WHERE subject=$1 AND family_id=$2',
+          [identity.subject, family.id],
+        );
+        await client.query(
+          'DELETE FROM brownie_telegram_link_tokens WHERE subject=$1 AND family_id=$2',
+          [identity.subject, family.id],
+        );
+        await this.audit(
+          client,
+          family.id,
+          identity.subject,
+          'telegram.unlinked',
+          {},
         );
         return { ok: true };
       }
@@ -287,7 +337,7 @@ export class FamilyApplication {
       if (path === '/family/members' && method === 'GET') {
         const rows = (
           await client.query(
-            'SELECT m.*,a.email,a.name FROM brownie_memberships m JOIN brownie_accounts a ON a.subject=m.subject WHERE m.family_id=$1 ORDER BY a.name',
+            'SELECT m.*,a.email,a.name,l.username AS telegram_username,l.subject AS telegram_linked_subject FROM brownie_memberships m JOIN brownie_accounts a ON a.subject=m.subject LEFT JOIN brownie_telegram_links l ON l.subject=m.subject AND l.family_id=m.family_id WHERE m.family_id=$1 ORDER BY a.name',
             [family.id],
           )
         ).rows;
@@ -298,8 +348,8 @@ export class FamilyApplication {
           )
         ).rows;
         return {
-          members: rows.map((m) =>
-            this.user(
+          members: rows.map((m) => ({
+            ...this.user(
               {
                 subject: m.subject,
                 email: m.email,
@@ -309,7 +359,16 @@ export class FamilyApplication {
               m,
               family,
             ),
-          ),
+            telegram: {
+              linked: !!m.telegram_linked_subject,
+              ...(m.telegram_username ? { username: m.telegram_username } : {}),
+            },
+            telegramReportTime: m.telegram_report_time ?? null,
+            nextReportAt:
+              m.next_telegram_report_at === null
+                ? null
+                : new Date(Number(m.next_telegram_report_at)).toISOString(),
+          })),
           invitations: invitations.map((i) => ({
             id: i.id,
             email: i.email,
@@ -348,6 +407,57 @@ export class FamilyApplication {
           { invitationId: path.split('/')[3], role: body.role },
         );
         return { ok: true };
+      }
+      if (
+        /^\/family\/members\/[^/]+\/reminders$/.test(path) &&
+        method === 'PATCH'
+      ) {
+        const subject = decodeURIComponent(path.split('/')[3]);
+        check(
+          subject === identity.subject || user.role === 'admin',
+          'FORBIDDEN',
+          403,
+        );
+        const target = (
+          await client.query(
+            'SELECT subject FROM brownie_memberships WHERE family_id=$1 AND subject=$2',
+            [family.id, subject],
+          )
+        ).rows[0];
+        check(target, 'NOT_FOUND', 404);
+        check(
+          Object.prototype.hasOwnProperty.call(body, 'telegramReportTime'),
+          'VALIDATION_FAILED',
+        );
+        const reportTime =
+          body.telegramReportTime === null
+            ? null
+            : validateDailyReportTime(body.telegramReportTime);
+        const effective = reportTime ?? familyReportTime(family.state as State);
+        const next = nextTelegramReportAt(effective, this.now());
+        await client.query(
+          'UPDATE brownie_memberships SET telegram_report_time=$1::jsonb,next_telegram_report_at=$2 WHERE family_id=$3 AND subject=$4',
+          [
+            reportTime === null ? null : JSON.stringify(reportTime),
+            next,
+            family.id,
+            subject,
+          ],
+        );
+        await this.audit(
+          client,
+          family.id,
+          identity.subject,
+          'telegram.schedule-changed',
+          {
+            subject,
+          },
+        );
+        return {
+          ok: true,
+          telegramReportTime: reportTime,
+          nextReportAt: new Date(next).toISOString(),
+        };
       }
       if (
         /^\/family\/members\/[^/]+$/.test(path) &&
@@ -606,6 +716,9 @@ export class FamilyApplication {
       "INSERT INTO brownie_memberships(subject,family_id,person_id,role) VALUES($1,$2,$3,'deleter')",
       [i.subject, id, personId],
     );
+    await syncMemberTelegramSchedule(c, id, state, this.now(), {
+      subject: i.subject,
+    });
     await this.audit(c, id, i.subject, 'family.created', {});
     return this.login(
       c,
@@ -656,6 +769,11 @@ export class FamilyApplication {
     check(body.expectedRevision === f.state.revision, 'REVISION_CONFLICT', 409);
     const before = normalize(f.state),
       overrides = await manualRates(c, f.id);
+    // Freeze compatibility defaults before a command can add/remove an automatic
+    // schedule. Otherwise the same legacy obligation would silently change its
+    // reminder policy as a side effect of that schedule edit.
+    for (const obligation of before.obligations)
+      obligation.reminder ??= effectiveReminderSettings(before, obligation);
     authorizeFamilyCommands(before, body.commands, user);
     const now = new Date(this.now()),
       backfill = body.commands.some(
@@ -692,6 +810,13 @@ export class FamilyApplication {
       JSON.stringify(after),
       f.id,
     ]);
+    if (
+      JSON.stringify(familyReportTime(before)) !==
+      JSON.stringify(familyReportTime(after))
+    )
+      await syncMemberTelegramSchedule(c, f.id, after, this.now(), {
+        inheritingOnly: true,
+      });
     await c.query(
       'INSERT INTO brownie_family_operations(family_id,id,actor,request_hash,revision,committed_at) VALUES($1,$2,$3,$4,$5,$6)',
       [f.id, body.operationId, user.id, hash, after.revision, this.now()],
@@ -833,6 +958,9 @@ export class FamilyApplication {
       'INSERT INTO brownie_memberships(subject,family_id,person_id,role) VALUES($1,$2,$3,$4)',
       [i.subject, family.id, fresh.person_id, fresh.role],
     );
+    await syncMemberTelegramSchedule(c, family.id, family.state, this.now(), {
+      subject: i.subject,
+    });
     await c.query('UPDATE brownie_invitations SET accepted_at=$1 WHERE id=$2', [
       this.now(),
       fresh.id,

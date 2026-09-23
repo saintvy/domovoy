@@ -42,6 +42,24 @@ const positiveMoney = money.refine(
 );
 const currency = z.string().regex(/^[A-Z]{3}$/);
 const color = z.string().regex(/^#[0-9a-fA-F]{6}$/);
+const timeZone = z.string().refine((v) => {
+  try {
+    new Intl.DateTimeFormat('en', { timeZone: v });
+    return true;
+  } catch {
+    return false;
+  }
+}, 'Неизвестный часовой пояс');
+const dailyReportTime = z
+  .object({ hour: z.number().int().min(0).max(23), timeZone })
+  .strict();
+const reminder = z
+  .object({
+    enabled: z.boolean(),
+    daysBefore: z.number().int().min(0).max(365),
+    repeat: z.enum(['once', 'daily']),
+  })
+  .strict();
 const beneficiaries = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('household') }).strict(),
   z
@@ -88,6 +106,7 @@ const obligation = z
     lifecycleState: z.enum(['active', 'archived']),
     seatCapacity: z.number().int().min(1).max(1000).optional(),
     trialEnd: date.optional(),
+    reminder: reminder.optional(),
   })
   .strict();
 const rule = z
@@ -239,15 +258,9 @@ const householdFields = {
     .max(50)
     .refine((items) => new Set(items).size === items.length)
     .optional(),
-  timezone: z.string().refine((v) => {
-    try {
-      new Intl.DateTimeFormat('en', { timeZone: v });
-      return true;
-    } catch {
-      return false;
-    }
-  }, 'Неизвестный часовой пояс'),
+  timezone: timeZone,
   locale: z.enum(['ru', 'en']),
+  telegramReportTime: dailyReportTime.optional(),
 };
 const audit = z
   .object({
@@ -290,6 +303,7 @@ export const commandSchema = z.discriminatedUnion('type', [
             beneficiaries: beneficiaries.optional(),
             iconId: z.string().max(80).optional(),
             iconColor: color.optional(),
+            reminder: reminder.optional(),
             activeTo: date.nullable().optional(),
           })
           .strict(),

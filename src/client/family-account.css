@@ -6,6 +6,36 @@
 .family-directory-person {
   padding: 20px;
 }
+.family-telegram-settings {
+  display: grid;
+  gap: 12px;
+  margin: 16px 0;
+  padding: 14px;
+  border: 1px solid var(--border, #e0e5e2);
+  border-radius: 12px;
+}
+.family-telegram-heading,
+.family-telegram-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.family-telegram-schedule {
+  display: grid;
+  gap: 10px;
+}
+.family-telegram-link {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin: 0;
+}
+.family-telegram-schedule .form-grid {
+  margin: 0;
+}
 .family-person-row {
   display: flex;
   align-items: center;

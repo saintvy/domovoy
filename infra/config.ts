@@ -17,6 +17,8 @@ export interface InfraConfig {
   /** Accepted for old deployment files; new households choose their own head on creation. */
   bootstrapAdminEmail?: string;
   invitationSenderEmail?: string;
+  /** Enable only after the additive Telegram SQL migration and SSM provisioning. */
+  telegramRemindersEnabled?: boolean;
   googleClientId: string;
   cognitoDomainPrefix: string;
   /** Optional canonical website domain; the ACM certificate must be in us-east-1. */
@@ -47,6 +49,11 @@ function cidrBounds(cidr: string): [number, number] {
 }
 
 export function validateConfig(config: InfraConfig): InfraConfig {
+  if (
+    config.telegramRemindersEnabled !== undefined &&
+    typeof config.telegramRemindersEnabled !== 'boolean'
+  )
+    throw new Error('telegramRemindersEnabled must be boolean');
   for (const name of ['brownieAccountId', 'wccAccountId'] as const)
     if (!/^\d{12}$/.test(config[name]))
       throw new Error(`${name} must be a 12-digit AWS account ID`);

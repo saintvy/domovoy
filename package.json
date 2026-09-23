@@ -25,8 +25,10 @@
     "format:check": "prettier --check ."
   },
   "dependencies": {
+    "@aws-sdk/client-lambda": "^3.1137.0",
     "@aws-sdk/client-s3": "^3.1130.0",
     "@aws-sdk/client-sesv2": "^3.1132.0",
+    "@aws-sdk/client-ssm": "^3.1137.0",
     "dexie": "^4.0.11",
     "lucide-react": "^0.468.0",
     "pg": "^8.23.0",

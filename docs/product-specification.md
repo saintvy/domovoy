@@ -272,6 +272,40 @@ segment. Backdated payments must update historical debt calculations.
 
 ## 6. Persistence and concurrency
 
+### Telegram daily reports
+
+The family chooses a default local report hour and IANA timezone. Each account
+may override the schedule in family/access settings; the head may also configure
+member schedules. Preserve the selected local hour across daylight-saving changes,
+storing the next EventBridge trigger as UTC. The hourly UTC rule runs at minute
+zero; fractional-offset zones use the next hourly boundary, disclosed in the UI.
+
+Obligations support enabled reminders, a lead of 0–365 days, and either one
+reminder per billing period or daily reminders until settlement, including overdue
+days. Existing non-automatic obligations receive daily reminders starting one day
+before the due date; existing automatic obligations have reminders disabled.
+Materialize these defaults once and preserve explicit settings.
+
+Reports list outstanding original-currency amounts and due dates in overdue,
+upcoming/due, and automatic-payment sections, retaining estimate/unknown labels.
+Only the responsible person's linked account receives a report; beneficiaries and
+automatic-payment payers do not determine its recipient. Skip accounts without a
+Telegram link and empty reports. Existing grace-day and settlement rules apply.
+
+Members link only their own private Telegram chat using an expiring one-use URL.
+Relinking replaces the active chat after successful token consumption; unlinking
+revokes pending links and invalidates queued reports. Provider requests require
+webhook authentication, and account linking must withstand replay and concurrent
+membership changes.
+
+Reports are durable logical operations, revalidated before sending. Duplicate
+events cannot concurrently send the same report. An ambiguous provider timeout is
+recorded as unknown without automatic resend; accepted and unknown one-time
+attempts suppress a second one-time reminder. Telegram reports never create
+payments or confirm a bank transaction.
+
+### Financial command transactions
+
 The financial register is one JSONB snapshot per family, with separate account,
 membership, session, invitation, operation and audit tables. The snapshot is capped
 at 4 MiB; normalization and range queries are future scaling work.

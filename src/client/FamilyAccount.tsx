@@ -9,7 +9,7 @@ import {
   type FormEvent,
 } from 'react';
 import { ChevronDown } from 'lucide-react';
-import { householdToday, type State } from '../domain';
+import { householdToday, type DailyReportTime, type State } from '../domain';
 import { availableFamilyObligations } from './family-availability';
 import { api, db, type User } from './store';
 import { clearInvitation, pendingInvitation } from './auth';
@@ -164,6 +164,9 @@ export function FamilyOnboarding({
 interface Member extends User {
   email: string;
   personId: string;
+  telegram?: { linked: boolean; username?: string };
+  telegramReportTime?: DailyReportTime | null;
+  nextReportAt?: string | null;
 }
 interface Invitation {
   id: string;
@@ -176,6 +179,197 @@ interface Access {
   members: Member[];
   invitations: Invitation[];
   invitationsEnabled: boolean;
+}
+function TelegramMemberSettings({
+  member,
+  familyTime,
+  canSchedule,
+  isSelf,
+  busy,
+  setBusy,
+  reload,
+  reportError,
+  t,
+}: {
+  member: Member;
+  familyTime: DailyReportTime;
+  canSchedule: boolean;
+  isSelf: boolean;
+  busy: boolean;
+  setBusy: (value: boolean) => void;
+  reload: () => Promise<void>;
+  reportError: (value: string) => void;
+  t: Translator;
+}) {
+  const effective = member.telegramReportTime ?? familyTime;
+  const [inherit, setInherit] = useState(member.telegramReportTime == null),
+    [hour, setHour] = useState(effective.hour),
+    [timeZone, setTimeZone] = useState(effective.timeZone),
+    [link, setLink] = useState<{ url: string; expiresAt: number }>();
+  useEffect(() => {
+    const next = member.telegramReportTime ?? familyTime;
+    setInherit(member.telegramReportTime == null);
+    setHour(next.hour);
+    setTimeZone(next.timeZone);
+  }, [member.telegramReportTime, familyTime.hour, familyTime.timeZone]);
+
+  async function request(path: string, body?: unknown, method?: string) {
+    setBusy(true);
+    reportError('');
+    try {
+      const result = await api<{ url?: string; expiresAt?: number }>(
+        path,
+        body,
+        method,
+      );
+      if (result.url && result.expiresAt)
+        setLink({ url: result.url, expiresAt: result.expiresAt });
+      if (method === 'DELETE') setLink(undefined);
+      await reload();
+    } catch (error) {
+      reportError(message(error));
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <div className="family-telegram-settings">
+      <div className="family-telegram-heading">
+        <strong>Telegram</strong>
+        <span className={member.telegram?.linked ? 'badge-soft' : 'muted'}>
+          {member.telegram?.linked
+            ? member.telegram.username
+              ? `@${member.telegram.username.replace(/^@/, '')}`
+              : t('Привязан', 'Linked')
+            : t('Не привязан', 'Not linked')}
+        </span>
+      </div>
+      {isSelf && (
+        <div className="family-telegram-actions">
+          <button
+            type="button"
+            className="button secondary"
+            disabled={busy}
+            onClick={() => void request('/telegram/link', {})}
+          >
+            {member.telegram?.linked
+              ? t('Перепривязать Telegram', 'Relink Telegram')
+              : t('Привязать Telegram', 'Link Telegram')}
+          </button>
+          {member.telegram?.linked && (
+            <button
+              type="button"
+              className="text-button danger-text"
+              disabled={busy}
+              onClick={() =>
+                void request('/telegram/link', undefined, 'DELETE')
+              }
+            >
+              {t('Отвязать', 'Unlink')}
+            </button>
+          )}
+        </div>
+      )}
+      {isSelf && link && (
+        <p className="family-telegram-link">
+          <a
+            className="button primary"
+            href={link.url}
+            target="_blank"
+            rel="noreferrer"
+          >
+            {t('Открыть Telegram', 'Open Telegram')}
+          </a>
+          <small>
+            {t('Ссылка действует до', 'Link expires at')}:{' '}
+            {new Date(link.expiresAt).toLocaleString(t('ru-RU', 'en-GB'))}
+          </small>
+        </p>
+      )}
+      {canSchedule && (
+        <div className="family-telegram-schedule">
+          <label className="checkbox-row">
+            <input
+              type="checkbox"
+              checked={inherit}
+              disabled={busy}
+              onChange={(event) => {
+                setInherit(event.target.checked);
+                if (!event.target.checked) {
+                  setHour(familyTime.hour);
+                  setTimeZone(
+                    Intl.DateTimeFormat().resolvedOptions().timeZone ||
+                      familyTime.timeZone,
+                  );
+                }
+              }}
+            />
+            {t('Использовать время семьи', 'Use household report time')}
+          </label>
+          {!inherit && (
+            <div className="form-grid">
+              <label className="field">
+                <span>{t('Местный час', 'Local hour')}</span>
+                <select
+                  value={hour}
+                  disabled={busy}
+                  onChange={(event) => setHour(Number(event.target.value))}
+                >
+                  {Array.from({ length: 24 }, (_, value) => (
+                    <option value={value} key={value}>
+                      {String(value).padStart(2, '0')}:00
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="field">
+                <span>{t('Часовой пояс', 'Timezone')}</span>
+                <input
+                  value={timeZone}
+                  disabled={busy}
+                  onChange={(event) => setTimeZone(event.target.value)}
+                />
+              </label>
+            </div>
+          )}
+          <small className="muted">
+            {t(
+              'Местный час сохраняется при переходе на летнее время. Для часовых поясов со смещением на неполный час отчёт придёт при первом часовом запуске после выбранного времени.',
+              'The local hour is preserved across daylight-saving changes. For partial-hour timezones, delivery occurs on the first hourly run after the selected time.',
+            )}
+          </small>
+          <button
+            type="button"
+            className="button secondary"
+            disabled={busy || (!inherit && !timeZone.trim())}
+            onClick={() =>
+              void request(
+                `/family/members/${encodeURIComponent(member.id)}/reminders`,
+                {
+                  telegramReportTime: inherit
+                    ? null
+                    : { hour, timeZone: timeZone.trim() },
+                },
+                'PATCH',
+              )
+            }
+          >
+            {t('Сохранить время отчёта', 'Save report time')}
+          </button>
+          {member.nextReportAt && (
+            <small>
+              {t('Следующий отчёт', 'Next report')}:{' '}
+              {new Date(member.nextReportAt).toLocaleString(
+                t('ru-RU', 'en-GB'),
+                { timeZone: effective.timeZone },
+              )}{' '}
+              ({effective.timeZone})
+            </small>
+          )}
+        </div>
+      )}
+    </div>
+  );
 }
 const memberRoles = ['observer', 'editor', 'own_editor', 'deleter'] as const;
 const roleLabel = (role: string, t: Translator) =>
@@ -590,6 +784,24 @@ export function FamilyAccessPanel({
                   )}
                 </div>
               </header>
+              {member && (admin || member.id === user.id) && (
+                <TelegramMemberSettings
+                  member={member}
+                  familyTime={
+                    state.household.telegramReportTime ?? {
+                      hour: 9,
+                      timeZone: state.household.timezone,
+                    }
+                  }
+                  canSchedule={admin || member.id === user.id}
+                  isSelf={member.id === user.id}
+                  busy={busy}
+                  setBusy={setBusy}
+                  reload={reload}
+                  reportError={setError}
+                  t={t}
+                />
+              )}
               <div className="family-person-obligations">
                 {groups.map((group) => {
                   const key = person.id + ':' + group.key;

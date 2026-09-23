@@ -72,6 +72,15 @@ and the invitation outbox. Separate workers outside the VPC fetch ECB data and
 send SES email. Their separation prevents an email backlog from delaying rate
 updates; neither worker has SQL access. EventBridge drives maintenance and rate refreshes.
 
+Telegram reminders use a separate private SQL bridge, durable report jobs and
+opaque S3 wakeups. An internet-capable worker claims a freshly validated report
+through a narrowly scoped IAM invocation, calls Telegram, and records the result
+through the same bridge. It has no database configuration. An authenticated
+Telegram webhook consumes expiring account-link tokens through that bridge.
+Bot and webhook credentials are SSM Parameter Store SecureStrings; only parameter
+names enter the worker environment. See [Telegram reminders](telegram-reminders.md)
+for scheduling, delivery ambiguity and rollout requirements.
+
 The templates create no RDS instance, NAT gateway, EC2 instance or RDS proxy.
 This reduces standing infrastructure but requires an existing database account,
 explicit peering, capacity planning and selective recovery for the shared RDS host.

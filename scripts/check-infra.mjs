@@ -40,6 +40,7 @@ for (const template of [
     'AWS::EC2::NatGateway',
     'AWS::EC2::Instance',
     'AWS::EC2::EIP',
+    'AWS::SecretsManager::Secret',
   ])
     assert(
       !types(template).includes(type),
@@ -104,6 +105,78 @@ assert(
   types(app).includes('AWS::Events::Rule'),
   'Scheduled maintenance is required',
 );
+const lambdaByPrefix = (prefix) =>
+  entries.find(
+    ([id, resource]) =>
+      id.startsWith(prefix) && resource.Type === 'AWS::Lambda::Function',
+  );
+const [telegramBridgeId, telegramBridge] = lambdaByPrefix('TelegramBridge');
+const [telegramWorkerId, telegramWorker] = lambdaByPrefix('TelegramWorker');
+assert(
+  telegramBridge.Properties.VpcConfig,
+  'Telegram bridge must remain private',
+);
+assert.equal(telegramBridge.Properties.ReservedConcurrentExecutions, 1);
+assert.equal(telegramWorker.Properties.VpcConfig, undefined);
+assert(
+  !Object.keys(telegramWorker.Properties.Environment.Variables).some((key) =>
+    key.startsWith('PG'),
+  ),
+  'Internet worker must have no database configuration',
+);
+assert.equal(
+  telegramWorker.Properties.Environment.Variables.TELEGRAM_BOT_TOKEN_PARAMETER,
+  '/domovoy/telegram/bot-token',
+);
+assert.equal(
+  telegramWorker.Properties.Environment.Variables
+    .TELEGRAM_WEBHOOK_SECRET_PARAMETER,
+  '/domovoy/telegram/webhook-secret',
+);
+const telegramRule = entries.find(
+  ([id, resource]) =>
+    id.startsWith('HourlyTelegramReports') &&
+    resource.Type === 'AWS::Events::Rule',
+)[1];
+assert.equal(telegramRule.Properties.ScheduleExpression, 'cron(0 * * * ? *)');
+assert.equal(
+  telegramRule.Properties.State,
+  'DISABLED',
+  'Example rollout must remain disabled until migration',
+);
+const webhook = entries.find(
+  ([, resource]) =>
+    resource.Type === 'AWS::ApiGatewayV2::Route' &&
+    resource.Properties.RouteKey === 'POST /api/telegram/webhook',
+)[1];
+assert.equal(webhook.Properties.AuthorizationType, 'NONE');
+const financialRoute = entries.find(
+  ([, resource]) =>
+    resource.Type === 'AWS::ApiGatewayV2::Route' &&
+    resource.Properties.RouteKey === 'ANY /api/{proxy+}',
+)[1];
+assert.equal(financialRoute.Properties.AuthorizationType, 'JWT');
+const workerPolicy = entries.find(
+  ([id, resource]) =>
+    id.startsWith('TelegramWorkerServiceRoleDefaultPolicy') &&
+    resource.Type === 'AWS::IAM::Policy',
+)[1].Properties.PolicyDocument.Statement;
+const invocation = workerPolicy.filter((statement) =>
+  [statement.Action].flat().includes('lambda:InvokeFunction'),
+);
+assert.equal(invocation.length, 1);
+assert(JSON.stringify(invocation[0].Resource).includes(telegramBridgeId));
+assert(!JSON.stringify(workerPolicy).includes('ApiFunction'));
+const ssmPolicy = workerPolicy.filter((statement) =>
+  [statement.Action].flat().includes('ssm:GetParameter'),
+);
+assert.equal(ssmPolicy.length, 1);
+assert.deepEqual(ssmPolicy[0].Resource, [
+  'arn:aws:ssm:eu-central-1:111111111111:parameter/domovoy/telegram/bot-token',
+  'arn:aws:ssm:eu-central-1:111111111111:parameter/domovoy/telegram/webhook-secret',
+]);
+assert(!JSON.stringify(telegramWorker).includes('DatabasePassword'));
+assert(telegramWorkerId);
 assert(
   !types(setup).some((type) => type.startsWith('AWS::ApiGateway')),
   'Provisioner must have no public API',
