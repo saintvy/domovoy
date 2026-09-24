@@ -7,6 +7,7 @@ import { ObligationIcon } from './ObligationIcons';
 import { PriceChangeEditor, PriceHistory } from './PriceManagement';
 import { categoryLabel } from './categories';
 import { AppearanceSettings } from './AppearanceSettings';
+import { readLanguage, saveLanguage } from './language';
 import {
   groupMonthlyObligations,
   type MonthlyObligationRow,
@@ -37,6 +38,7 @@ import {
   clearAuth,
   revokeRefreshToken,
   startGoogleLogin,
+  isAuthenticated,
 } from './auth';
 
 import {
@@ -224,9 +226,8 @@ function HouseArt() {
   );
 }
 export default function App() {
-  const [lang, setLang] = useState<'ru' | 'en'>(() =>
-    localStorage.getItem('domovoy-language') === 'en' ? 'en' : 'ru',
-  );
+  const [lang, setLang] = useState(readLanguage);
+  const [languageUse, setLanguageUse] = useState(0);
   const t = (ru: string, en: string) => (lang === 'ru' ? ru : en);
   const [paymentTab, setPaymentTab] = useState<'payments' | 'automatic'>(
     'payments',
@@ -256,6 +257,62 @@ export default function App() {
     [csvPreview, setCsvPreview] = useState<any>(null);
   const inFlight = useRef(false);
   const recoveryInFlight = useRef(false);
+  const languageWrites = useRef(Promise.resolve());
+  const languageWriteVersion = useRef(0);
+
+  useEffect(() => {
+    document.documentElement.lang = lang;
+  }, [lang]);
+  useEffect(() => {
+    const active = () => {
+      setLang(readLanguage());
+      setLanguageUse((value) => value + 1);
+    };
+    window.addEventListener('focus', active);
+    return () => window.removeEventListener('focus', active);
+  }, []);
+  useEffect(() => {
+    const version = ++languageWriteVersion.current;
+    const epoch = authEpoch();
+    if (
+      loading ||
+      !online ||
+      !isAuthenticated() ||
+      (!user && !session?.onboarding)
+    )
+      return;
+    languageWrites.current = languageWrites.current
+      .catch(() => {})
+      .then(async () => {
+        if (version !== languageWriteVersion.current || epoch !== authEpoch())
+          return;
+        try {
+          await api('/account/preferences', { locale: lang }, 'PATCH');
+        } catch {
+          if (version === languageWriteVersion.current && epoch === authEpoch())
+            setToast(
+              lang === 'ru'
+                ? 'Язык сохранён на устройстве. Язык сообщений обновится после восстановления связи.'
+                : 'Language saved on this device. Message language will update when the connection returns.',
+            );
+        }
+      });
+  }, [lang, languageUse, loading, online, user?.id, session?.onboarding]);
+
+  const languageButton = (welcome = false) => (
+    <button
+      className={`icon-button${welcome ? ' welcome-language' : ''}`}
+      aria-label={t('Сменить язык', 'Change language')}
+      title={t('English', 'Русский')}
+      onClick={() => {
+        const next = lang === 'ru' ? 'en' : 'ru';
+        saveLanguage(next);
+        setLang(next);
+      }}
+    >
+      {lang.toUpperCase()}
+    </button>
+  );
 
   const actor = user?.id || '';
   const canEdit = ['admin', 'editor', 'own_editor', 'deleter'].includes(
@@ -867,20 +924,24 @@ export default function App() {
     );
   if (session?.onboarding && !user)
     return (
-      <FamilyOnboarding
-        t={t}
-        onError={handleError}
-        onComplete={async () => {
-          const next = await api('/session');
-          setSession(next);
-          setUser(next.user);
-          if (next.user) await refresh();
-        }}
-      />
+      <>
+        {languageButton(true)}
+        <FamilyOnboarding
+          t={t}
+          onError={handleError}
+          onComplete={async () => {
+            const next = await api('/session');
+            setSession(next);
+            setUser(next.user);
+            if (next.user) await refresh();
+          }}
+        />
+      </>
     );
   if (!user)
     return (
       <main className="auth-layout">
+        {languageButton(true)}
         <section className="auth-story">
           <Brand lang={lang} />
           <div>
@@ -1044,18 +1105,7 @@ export default function App() {
               </span>
             </button>
             <span className="topbar-separator" />
-            <button
-              className="icon-button"
-              aria-label={t('Сменить язык', 'Change language')}
-              title={t('English', 'Русский')}
-              onClick={() => {
-                const v = lang === 'ru' ? 'en' : 'ru';
-                setLang(v);
-                localStorage.setItem('domovoy-language', v);
-              }}
-            >
-              {lang.toUpperCase()}
-            </button>
+            {languageButton()}
             <button
               className="icon-button notification-button"
               aria-label={t('Напоминания', 'Reminders')}
@@ -2021,87 +2071,91 @@ export default function App() {
           )}
           {page === 'settings' && (
             <div className="settings-layout">
-              <AppearanceSettings t={t} />
-              <section className="panel settings-section">
-                <div className="panel-heading">
-                  <h2>{t('Домохозяйство', 'Household')}</h2>
-                  <Home size={19} />
-                </div>
-                {state && financial && (
-                  <HouseholdPreferences
-                    key={`${state.household.currency}:${state.household.color ?? ''}`}
-                    state={state}
-                    t={t}
-                    isAdmin={isAdmin}
-                    busy={busy}
-                    submit={submit}
-                  />
-                )}
-              </section>
-
-              {
+              <div className="settings-column">
+                <AppearanceSettings t={t} />
+                {
+                  <section className="panel settings-section">
+                    <div className="panel-heading">
+                      <h2>{t('Устройства и сессии', 'Devices & sessions')}</h2>
+                      <ShieldCheck size={19} />
+                    </div>
+                    <div className="settings-body">
+                      {sessions.map((s) => (
+                        <div className="simple-row" key={s.id}>
+                          <span className="grow">
+                            <strong>
+                              {s.deviceName ||
+                                s.deviceId ||
+                                t('Браузер', 'Browser')}
+                            </strong>
+                            <small>
+                              {s.login || s.userId?.slice(0, 8)}
+                              {s.revokedAt
+                                ? ` · ${t('Завершена', 'Revoked')}`
+                                : ''}
+                            </small>
+                          </span>
+                          {!s.revokedAt && (
+                            <button
+                              className="text-button"
+                              onClick={() =>
+                                void api(`/sessions/${s.id}/revoke`, {})
+                                  .then(async () => {
+                                    const r = await api('/sessions');
+                                    setSessions(r.sessions || r);
+                                  })
+                                  .catch(handleError)
+                              }
+                            >
+                              {t('Завершить', 'Revoke')}
+                            </button>
+                          )}
+                        </div>
+                      ))}
+                      <button
+                        className="button secondary"
+                        onClick={() => void logout()}
+                      >
+                        <LogOut size={16} />
+                        {t('Выйти из аккаунта', 'Sign out')}
+                      </button>
+                    </div>
+                  </section>
+                }
+              </div>
+              <div className="settings-column">
                 <section className="panel settings-section">
                   <div className="panel-heading">
-                    <h2>{t('Устройства и сессии', 'Devices & sessions')}</h2>
-                    <ShieldCheck size={19} />
+                    <h2>{t('Домохозяйство', 'Household')}</h2>
+                    <Home size={19} />
                   </div>
-                  <div className="settings-body">
-                    {sessions.map((s) => (
-                      <div className="simple-row" key={s.id}>
-                        <span className="grow">
-                          <strong>
-                            {s.deviceName ||
-                              s.deviceId ||
-                              t('Браузер', 'Browser')}
-                          </strong>
-                          <small>
-                            {s.login || s.userId?.slice(0, 8)}
-                            {s.revokedAt
-                              ? ` · ${t('Завершена', 'Revoked')}`
-                              : ''}
-                          </small>
-                        </span>
-                        {!s.revokedAt && (
-                          <button
-                            className="text-button"
-                            onClick={() =>
-                              void api(`/sessions/${s.id}/revoke`, {})
-                                .then(async () => {
-                                  const r = await api('/sessions');
-                                  setSessions(r.sessions || r);
-                                })
-                                .catch(handleError)
-                            }
-                          >
-                            {t('Завершить', 'Revoke')}
-                          </button>
-                        )}
-                      </div>
-                    ))}
-                    <button
-                      className="button secondary"
-                      onClick={() => void logout()}
-                    >
-                      <LogOut size={16} />
-                      {t('Выйти из аккаунта', 'Sign out')}
-                    </button>
-                  </div>
+                  {state && financial && (
+                    <HouseholdPreferences
+                      key={`${state.household.currency}:${state.household.color ?? ''}`}
+                      state={state}
+                      t={t}
+                      isAdmin={isAdmin}
+                      busy={busy}
+                      submit={submit}
+                    />
+                  )}
                 </section>
-              }
-              {state && user && (
-                <FamilyAccountSettings
-                  user={user}
-                  state={state}
-                  t={t}
-                  onChange={async () => {
-                    const next = await api('/session');
-                    setSession(next);
-                    setUser(next.user);
-                    if (next.user) await refresh();
-                    else setState(null);
-                  }}
-                />
-              )}
+
+                {state && user && (
+                  <FamilyAccountSettings
+                    user={user}
+                    state={state}
+                    t={t}
+                    onChange={async () => {
+                      const next = await api('/session');
+                      setSession(next);
+                      setUser(next.user);
+                      if (next.user) await refresh();
+                      else setState(null);
+                    }}
+                  />
+                )}
+              </div>
             </div>
           )}
           <footer className="page-footer">

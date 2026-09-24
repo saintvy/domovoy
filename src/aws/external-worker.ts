@@ -10,6 +10,10 @@ import {
 import { SESv2Client, SendEmailCommand } from '@aws-sdk/client-sesv2';
 import { parseEcbHistory } from './exchange-rates';
 import type { InvitationMessage } from './families';
+import {
+  invitationEmailLocale,
+  renderInvitationEmail,
+} from './invitation-email';
 
 const s3 = new S3Client({ maxAttempts: 2 }),
   ses = new SESv2Client({ maxAttempts: 2 });
@@ -44,18 +48,22 @@ async function deliver(key: string) {
     throw new Error('INVALID_INVITATION');
   if (!process.env.INVITATION_SENDER)
     throw new Error('INVITATION_SENDER_REQUIRED');
+  // Messages queued before locale preferences existed retain the Russian copy.
+  const locale = invitationEmailLocale(message.locale);
+  const email = renderInvitationEmail(message, locale);
   await ses.send(
     new SendEmailCommand({
       FromEmailAddress: process.env.INVITATION_SENDER,
       Destination: { ToAddresses: [message.email] },
       Content: {
         Simple: {
-          Subject: { Data: 'Домовой: приглашение в семью', Charset: 'UTF-8' },
+          Subject: { Data: email.subject, Charset: 'UTF-8' },
           Body: {
             Text: {
-              Data: `Вас пригласили в семью «${message.familyName}» в приложении Домовой.\n\nВойдите через Google с адресом ${message.email} и подтвердите приглашение:\n${message.url}\n\nСсылка действует 7 дней и используется один раз. Если вы не ожидали приглашения, проигнорируйте письмо.`,
+              Data: email.text,
               Charset: 'UTF-8',
             },
+            Html: { Data: email.html, Charset: 'UTF-8' },
           },
         },
       },

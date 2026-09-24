@@ -26,6 +26,9 @@ _Dashboard captured from the application with fictional test data._
   an obligation, and automatic payment records for charges that are already due.
 - **Shared households:** Google sign-in, invitations, five permission levels,
   record authorship and revocable sessions across devices.
+- **Telegram reminders:** daily reports for responsible members, configurable
+  lead days, one-time or daily reminders, and local report times with DST handling.
+  Requires [Telegram deployment setup](docs/telegram-reminders.md).
 - **Multiple currencies:** original amounts alongside historical valuations in a
   household currency, using ECB reference rates.
 - **Useful views:** monthly summaries, beneficiary colors, price history, family

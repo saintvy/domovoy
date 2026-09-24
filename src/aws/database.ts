@@ -127,7 +127,10 @@ export async function saveState(
   );
 }
 
-export function createDatabase(env: NodeJS.ProcessEnv = process.env): Database {
+export function createDatabase(
+  env: NodeJS.ProcessEnv = process.env,
+  options: { maxConnections?: 1 | 2 } = {},
+): Database {
   assertDatabaseName(env.PGDATABASE);
   if (!env.PGHOST || !env.PGUSER || !env.PGPASSWORD || !env.PGSSLROOTCERT)
     throw new Error('PostgreSQL connection and trusted RDS CA are required');
@@ -137,7 +140,7 @@ export function createDatabase(env: NodeJS.ProcessEnv = process.env): Database {
     database: env.PGDATABASE,
     user: env.PGUSER,
     password: env.PGPASSWORD,
-    max: 2,
+    max: options.maxConnections ?? 2,
     connectionTimeoutMillis: 5000,
     idleTimeoutMillis: 15000,
     ssl: {

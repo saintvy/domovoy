@@ -12,6 +12,7 @@
   "databaseName": "brownie",
   "databaseUser": "brownie_runtime",
   "invitationSenderEmail": "replace-with-your-verified-ses-email@example.com",
+  "telegramRemindersEnabled": false,
   "googleClientId": "replace-with-google-client-id.apps.googleusercontent.com",
   "cognitoDomainPrefix": "brownie-replace-with-unique-name"
 }

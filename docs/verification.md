@@ -22,6 +22,11 @@ after `node scripts/dev-db.mjs up`. See the shell-specific commands in
 [local development](local-development.md#real-postgresql-test). Without that flag
 the case is intentionally skipped. CI runs it in a separate job with its own database.
 
+The same flag enables `tests/telegram-postgres.test.ts`, which exercises concurrent
+link consumption and competing one-time report claims through the actual worker
+and bridge against PostgreSQL. Run both SQL test files with `--maxWorkers=1` to
+serialize schema setup; the concurrency test itself opens competing transactions.
+
 ## Test boundaries
 
 Browser fixtures intercept API calls and use fictional household data. They test
@@ -32,6 +37,23 @@ development server has no fake-identity mode.
 Infrastructure synthesis verifies generated resources, not the permissions or
 state of a deployed account. The domain scale test is not an API throughput or
 capacity test. A successful build is not a disaster-recovery rehearsal.
+
+Telegram reminder verification additionally covers domain selection and original
+money, backend schedule/link/receipt transactions, webhook authentication and
+provider ambiguity, and the reminder settings browser workflow. Deployment checks
+assert the private bridge/public worker boundary, scoped parameter access, hourly
+UTC cron and disabled initial rollout. Live Telegram delivery requires an actual
+member to complete the one-use link; mock provider tests and SSM provisioning
+do not prove delivery to a real chat.
+
+Invitation regression checks cover a fragment arriving after application startup,
+the Google logout/PKCE/callback sequence, and acceptance into the existing household
+with the invited role. Language tests cover saved/browser/country precedence,
+geography failure and late-response races, authenticated account preferences,
+recipient language at Telegram claim, and escaped bilingual email templates.
+The browser OAuth test uses intercepted identity-provider responses; it does not
+claim a live Google sign-in. Layout checks remain shallow, including desktop/mobile
+family cards and independent settings columns.
 
 For a hosted release, additionally complete the checks in
 [deployment](deployment.md#cloud-acceptance-and-operations). Record the commit,

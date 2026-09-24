@@ -33,6 +33,21 @@ export function productionServices(): FamilyServices {
             );
           }
         : undefined,
+    queueTelegramReport: process.env.SERVICES_BUCKET
+      ? async (jobId) => {
+          await s3.send(
+            new PutObjectCommand({
+              Bucket: process.env.SERVICES_BUCKET!,
+              Key: `telegram-outbox/${jobId}.json`,
+              Body: JSON.stringify({ version: 1, jobId }),
+              ContentType: 'application/json',
+              ServerSideEncryption: 'AES256',
+            }),
+            { abortSignal: AbortSignal.timeout(5000) },
+          );
+        }
+      : undefined,
+    telegramBotUsername: 'domovoy_reminder_bot',
   };
   return services;
 }

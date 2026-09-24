@@ -9,6 +9,7 @@ import {
 import {
   parseMoney,
   moneyInputValue,
+  effectiveReminderSettings,
   type State,
   type Command,
   type Obligation,
@@ -100,6 +101,17 @@ export function ObligationEditor({
     ),
     [currency, setCurrency] = useState(state.household.currency),
     [owner, setOwner] = useState(obligation?.ownerPersonId ?? ''),
+    [reminderEnabled, setReminderEnabled] = useState(
+      obligation ? effectiveReminderSettings(state, obligation).enabled : true,
+    ),
+    [reminderDays, setReminderDays] = useState(
+      obligation ? effectiveReminderSettings(state, obligation).daysBefore : 1,
+    ),
+    [reminderRepeat, setReminderRepeat] = useState<'once' | 'daily'>(
+      obligation
+        ? effectiveReminderSettings(state, obligation).repeat
+        : 'daily',
+    ),
     [error, setError] = useState('');
   const onSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -122,6 +134,11 @@ export function ObligationEditor({
           : { kind: 'people' as const, personIds: beneficiaries },
         iconId: icon,
         iconColor,
+        reminder: {
+          enabled: reminderEnabled,
+          daysBefore: reminderDays,
+          repeat: reminderRepeat,
+        },
       };
       if (obligation) {
         void submit(
@@ -457,6 +474,56 @@ export function ObligationEditor({
             )}
           </p>
         )}
+        <fieldset>
+          <legend>{t('Напоминание в Telegram', 'Telegram reminder')}</legend>
+          <label className="checkbox-row form-checkbox">
+            <input
+              type="checkbox"
+              checked={reminderEnabled}
+              onChange={(event) => setReminderEnabled(event.target.checked)}
+            />
+            {t('Добавить напоминание в отчёт', 'Add a reminder to the report')}
+          </label>
+          {reminderEnabled && (
+            <div className="form-grid">
+              {field(
+                t('Начать за дней до оплаты', 'Start days before payment'),
+                <input
+                  type="number"
+                  min="0"
+                  max="365"
+                  required
+                  value={reminderDays}
+                  onChange={(event) =>
+                    setReminderDays(Number(event.target.value))
+                  }
+                />,
+              )}
+              {field(
+                t('Повторение напоминания', 'Reminder frequency'),
+                <select
+                  value={reminderRepeat}
+                  onChange={(event) =>
+                    setReminderRepeat(event.target.value as 'once' | 'daily')
+                  }
+                >
+                  <option value="once">{t('Один раз', 'Once')}</option>
+                  <option value="daily">
+                    {t('Ежедневно до оплаты', 'Daily until paid')}
+                  </option>
+                </select>,
+              )}
+            </div>
+          )}
+          {reminderEnabled && reminderRepeat === 'daily' && (
+            <p className="muted">
+              {t(
+                'После даты платежа напоминание будет приходить ежедневно до погашения или списания долга.',
+                'After the due date, the reminder is sent daily until the charge is paid or waived.',
+              )}
+            </p>
+          )}
+        </fieldset>
         {!obligation && (
           <>
             <label className="checkbox-row form-checkbox">

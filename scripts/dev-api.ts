@@ -71,6 +71,8 @@ const server = createServer(async (request, response) => {
         architecture: 'local-docker-postgresql',
         authProvider: 'cognito-google',
       };
+    else if (path === '/api/locale' && request.method === 'GET')
+      result = { locale: 'en' }; // No IP geography on the local development server.
     else if (path === '/api/local/maintenance' && request.method === 'POST') {
       const supplied = Buffer.from(
           String(request.headers['x-brownie-maintenance'] ?? ''),
