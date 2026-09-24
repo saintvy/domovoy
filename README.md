@@ -55,6 +55,12 @@ flowchart LR
   Rates[Rates worker / ECB] --> Storage
   Schedule[EventBridge] --> API
   Schedule --> Rates
+  Schedule --> TelegramBridge[Private Telegram bridge]
+  TelegramBridge --> DB
+  TelegramBridge --> Wakeups[(Private S3 / report wakeups)]
+  Wakeups --> TelegramWorker[Internet-capable Telegram worker]
+  TelegramWorker <--> Telegram[Telegram Bot API]
+  TelegramWorker --> TelegramBridge
 ```
 
 The infrastructure reuses an existing PostgreSQL 16 instance in a separate AWS
