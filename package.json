@@ -33,7 +33,7 @@
     "lucide-react": "^0.468.0",
     "pg": "^8.23.0",
     "react": "^19.0.0",
-    "react-dom": "^19.0.0",
+    "react-dom": "^19.3.0",
     "zod": "^3.24.2"
   },
   "devDependencies": {
@@ -46,7 +46,7 @@
     "@types/node": "^22.15.0",
     "@types/pg": "^8.23.1",
     "@types/react": "^19.0.0",
-    "@types/react-dom": "^19.0.0",
+    "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^4.4.0",
     "aws-cdk": "^2.1141.0",
     "aws-cdk-lib": "^2.269.0",
