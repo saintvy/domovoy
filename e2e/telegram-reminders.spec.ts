@@ -77,6 +77,7 @@ test('links the current member and stores a per-member local report override', a
   page,
 }) => {
   const fixture = await mockGoogleHousehold(page);
+  await page.addInitScript(() => localStorage.setItem('domovoy-theme', 'dark'));
   const person = fixture.read().people[0];
   let member = {
     ...TEST_USER,
@@ -124,7 +125,15 @@ test('links the current member and stores a per-member local report override', a
   await page
     .getByRole('button', { name: 'Семья и доступы', exact: true })
     .click();
+  await expect(page.locator('.family-email-strip').first()).toHaveCSS(
+    'background-color',
+    'rgb(32, 62, 49)',
+  );
   const telegramDetails = page.locator('.family-telegram-details').first();
+  await expect(telegramDetails).toHaveCSS(
+    'background-color',
+    'rgb(32, 62, 49)',
+  );
   await expect(telegramDetails).not.toHaveAttribute('open', '');
   await page.screenshot({
     path: 'test-results/telegram-reminder-family-collapsed.png',
