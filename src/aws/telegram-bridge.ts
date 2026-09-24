@@ -8,6 +8,7 @@ import {
   persistOnceReceipts,
   type TelegramReportPublisher,
 } from './telegram-reminders';
+import { isAppLocale, type AppLocale } from '../shared/locale';
 
 export type TelegramBridgeEvent =
   | { action: 'telegram.schedule' }
@@ -35,7 +36,7 @@ export type TelegramBridgeResult =
       results: Array<{ familyId: string; subject: string; status: string }>;
       retriesQueued: number;
     }
-  | { ok: boolean }
+  | { ok: boolean; locale?: AppLocale }
   | { send: false }
   | { send: true; chatId: string; text: string };
 
@@ -84,7 +85,7 @@ async function consumeTelegramLink(
   database: Database,
   now: number,
   event: Extract<TelegramBridgeEvent, { action: 'telegram.consume-link' }>,
-): Promise<{ ok: boolean }> {
+): Promise<{ ok: boolean; locale?: AppLocale }> {
   if (
     !Number.isSafeInteger(event.updateId) ||
     event.updateId < 0 ||
@@ -103,11 +104,16 @@ async function consumeTelegramLink(
     if (!update.rows.length) {
       const replay = (
         await client.query(
-          'SELECT ok FROM brownie_telegram_updates WHERE update_id=$1',
+          'SELECT ok,locale FROM brownie_telegram_updates WHERE update_id=$1',
           [updateId],
         )
       ).rows[0];
-      return { ok: replay?.ok === true };
+      return {
+        ok: replay?.ok === true,
+        ...(replay?.ok === true && isAppLocale(replay.locale)
+          ? { locale: replay.locale }
+          : {}),
+      };
     }
     const candidate = (
       await client.query(
@@ -118,10 +124,12 @@ async function consumeTelegramLink(
     if (!candidate) return { ok: false };
     // Use the same lock order as authenticated family writes. Leaving/unlinking
     // cannot race a token into a different or deleted membership.
-    await client.query(
-      'SELECT subject FROM brownie_accounts WHERE subject=$1 FOR UPDATE',
-      [candidate.subject],
-    );
+    const account = (
+      await client.query(
+        'SELECT subject,preferred_locale FROM brownie_accounts WHERE subject=$1 FOR UPDATE',
+        [candidate.subject],
+      )
+    ).rows[0];
     const family = (
       await client.query(
         'SELECT id FROM brownie_families WHERE id=$1 AND deleted_at IS NULL FOR UPDATE',
@@ -178,11 +186,14 @@ async function consumeTelegramLink(
         now,
       ],
     );
+    const locale = isAppLocale(account?.preferred_locale)
+      ? account.preferred_locale
+      : undefined;
     await client.query(
-      'UPDATE brownie_telegram_updates SET ok=true WHERE update_id=$1',
-      [updateId],
+      'UPDATE brownie_telegram_updates SET ok=true,locale=$2 WHERE update_id=$1',
+      [updateId, locale ?? null],
     );
-    return { ok: true };
+    return { ok: true, ...(locale ? { locale } : {}) };
   });
 }
 

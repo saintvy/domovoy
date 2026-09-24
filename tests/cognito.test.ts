@@ -35,6 +35,7 @@ let location: {
   hostname: string;
   pathname: string;
   search: string;
+  hash: string;
   assign: ReturnType<typeof vi.fn>;
 };
 let session: BrowserStorage, local: BrowserStorage;
@@ -49,6 +50,7 @@ beforeEach(() => {
     hostname: 'brownie.example',
     pathname: '/',
     search: '',
+    hash: '',
     assign: vi.fn(),
   };
   vi.stubGlobal('sessionStorage', session);
@@ -58,6 +60,7 @@ beforeEach(() => {
   vi.stubGlobal('history', {
     replaceState: vi.fn(() => {
       location.search = '';
+      location.hash = '';
     }),
   });
   fetcher = vi.fn(async () => json(configuration));
@@ -81,6 +84,49 @@ function callback(state = 'state', age = 0) {
 }
 
 describe('Cognito browser authorization boundary', () => {
+  it('keeps a late fragment invitation through logout, PKCE and callback until explicit acceptance', async () => {
+    const auth = await import('../src/client/auth');
+    await auth.initializeAuth();
+    const invitation = 'a'.repeat(43);
+    // A fragment-only link can arrive after startup, immediately before login.
+    location.hash = '#invite=' + invitation;
+    await auth.startGoogleLogin();
+    expect(auth.pendingInvitation()).toBe(invitation);
+    expect(location.hash).toBe('');
+    await auth.initializeAuth();
+    const flow = JSON.parse(session.getItem('brownie-oauth-pkce')!);
+    expect(flow.invitation).toBe(invitation);
+    // The validated PKCE flow also retains the pending invitation.
+    session.removeItem('brownie-invitation');
+    location.search = '?code=test-code&state=' + flow.state;
+    fetcher.mockImplementation(async (url: unknown) => {
+      if (String(url).endsWith('/oauth2/token'))
+        return json({ id_token: jwt(flow.nonce) });
+      if (String(url).endsWith('/auth/session'))
+        return json({ onboarding: true });
+      return json(configuration);
+    });
+    await auth.initializeAuth();
+    expect(auth.authError()).toBe('');
+    expect(auth.isAuthenticated()).toBe(true);
+    expect(auth.pendingInvitation()).toBe(invitation);
+    expect(local.getItem('brownie-invitation')).toBeNull();
+    auth.clearInvitation();
+    expect(auth.pendingInvitation()).toBeNull();
+  });
+
+  it('captures a hashchange while the application is already open', async () => {
+    const browser = new EventTarget();
+    vi.stubGlobal('window', browser);
+    const auth = await import('../src/client/auth');
+    await auth.initializeAuth();
+    location.hash = '#invite=' + 'b'.repeat(43);
+    browser.dispatchEvent(new Event('hashchange'));
+    expect(auth.pendingInvitation()).toBe('b'.repeat(43));
+    location.hash = '#invite=invalid';
+    browser.dispatchEvent(new Event('hashchange'));
+    expect(auth.pendingInvitation()).toBe('b'.repeat(43));
+  });
   it('clears Cognito Lite SSO before a fresh authorization with PKCE S256 and independent state/nonce', async () => {
     const auth = await import('../src/client/auth');
     await auth.initializeAuth();

@@ -81,6 +81,19 @@ Bot and webhook credentials are SSM Parameter Store SecureStrings; only paramete
 names enter the worker environment. See [Telegram reminders](telegram-reminders.md)
 for scheduling, delivery ambiguity and rollout requirements.
 
+An exact, uncached CloudFront `/api/locale` behavior forwards only the generated
+country header to a small public API route that reuses the existing Lambda and
+returns before database initialization. A separate HTTP API ID avoids a cycle
+between the distribution and the authenticated API's CORS origin on deployments
+without a custom domain. This is a cosmetic language hint, never an authorization
+signal; no external IP lookup service or new compute is introduced.
+
+Account `preferred_locale` records the last authenticated interface language,
+independently of household accounting locale. Telegram reads it at delivery claim;
+invitation messages capture a locale in the durable outbox. The email worker still
+has no SQL access. Apply the additive account-column migration before publishing
+preference-writing API and client code.
+
 The templates create no RDS instance, NAT gateway, EC2 instance or RDS proxy.
 This reduces standing infrastructure but requires an existing database account,
 explicit peering, capacity planning and selective recovery for the shared RDS host.

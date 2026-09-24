@@ -1,7 +1,8 @@
 /** Account membership is global; every financial operation is scoped to a locked family. */
 export const familySchema = `
 CREATE TABLE IF NOT EXISTS brownie_accounts (
- subject text PRIMARY KEY, email text NOT NULL UNIQUE, name text NOT NULL
+ subject text PRIMARY KEY, email text NOT NULL UNIQUE, name text NOT NULL,
+ preferred_locale text CHECK(preferred_locale IN ('ru','en'))
 );
 CREATE TABLE IF NOT EXISTS brownie_families (
  id text PRIMARY KEY, head_subject text NOT NULL REFERENCES brownie_accounts(subject),
@@ -69,7 +70,8 @@ CREATE TABLE IF NOT EXISTS brownie_telegram_link_tokens (
 );
 CREATE INDEX IF NOT EXISTS brownie_telegram_link_tokens_subject ON brownie_telegram_link_tokens(subject);
 CREATE TABLE IF NOT EXISTS brownie_telegram_updates (
- update_id text PRIMARY KEY, handled_at bigint NOT NULL, ok boolean NOT NULL DEFAULT false
+ update_id text PRIMARY KEY, handled_at bigint NOT NULL, ok boolean NOT NULL DEFAULT false,
+ locale text CHECK(locale IN ('ru','en'))
 );
 CREATE TABLE IF NOT EXISTS brownie_telegram_report_jobs (
  id text PRIMARY KEY, family_id text NOT NULL REFERENCES brownie_families(id) ON DELETE CASCADE,
@@ -91,6 +93,12 @@ CREATE TABLE IF NOT EXISTS brownie_telegram_once_receipts (
 );
 -- Upgrade pre-release installations that initialized the first reminder schema.
 ALTER TABLE brownie_telegram_updates ADD COLUMN IF NOT EXISTS ok boolean NOT NULL DEFAULT false;
+ALTER TABLE brownie_telegram_updates ADD COLUMN IF NOT EXISTS locale text;
+ALTER TABLE brownie_telegram_updates DROP CONSTRAINT IF EXISTS brownie_telegram_updates_locale_check;
+ALTER TABLE brownie_telegram_updates ADD CONSTRAINT brownie_telegram_updates_locale_check CHECK(locale IN ('ru','en'));
+ALTER TABLE brownie_accounts ADD COLUMN IF NOT EXISTS preferred_locale text;
+ALTER TABLE brownie_accounts DROP CONSTRAINT IF EXISTS brownie_accounts_preferred_locale_check;
+ALTER TABLE brownie_accounts ADD CONSTRAINT brownie_accounts_preferred_locale_check CHECK(preferred_locale IN ('ru','en'));
 ALTER TABLE brownie_telegram_report_jobs ADD COLUMN IF NOT EXISTS part integer NOT NULL DEFAULT 0;
 ALTER TABLE brownie_telegram_report_jobs ADD COLUMN IF NOT EXISTS item_keys jsonb;
 ALTER TABLE brownie_telegram_report_jobs DROP CONSTRAINT IF EXISTS brownie_telegram_report_jobs_family_id_subject_report_date_key;

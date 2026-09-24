@@ -118,6 +118,17 @@ between families. Pending invitation roles may change without creating membershi
 Head status can only be transferred to a confirmed member by the current head;
 the admin option is listed first but disabled for an unconfirmed email.
 
+Capture invitation fragments on initial load, same-document navigation and before
+Google redirects. Retain the token only in the current tab through the complete
+logout/PKCE/callback sequence until acceptance or explicit dismissal. A pending
+invitation takes precedence over the create-family form during onboarding.
+
+Invitations contain localized plain text and light-theme HTML with green accents,
+the application logo, intended Google address and a single-use acceptance link.
+Use a known recipient's last application language, otherwise the sender's language,
+then the household locale. Freeze the language in the outbox for consistent retries;
+legacy queued messages without a language retain Russian.
+
 A new invitation for the same email/person revokes the previous one. Revoked,
 expired or already-used tokens give no access. The initial sending limit is 20
 invitations per family per day. Queuing is not delivery; retries may resend the same
@@ -341,16 +352,34 @@ and actionable errors. Keep promotional filler out of working screens. An
 obligation's category overrides its provider category. Appearance preferences
 belong to the browser, not the financial register.
 
-| Screen      | Requirements                                                                                                                                       |
-| ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Sign-in     | Google only; no demo or user-facing infrastructure credentials                                                                                     |
-| No family   | Create a family or understand/accept an invitation                                                                                                 |
-| Overview    | Four summary metrics, two monthly charts, grouped obligations and upcoming payments                                                                |
-| Obligations | Optional responsible person, separate beneficiaries, end date, weekly recurrence, automatic schedule and icon                                      |
-| Payments    | Obligation-first entry, original/base amounts, credit and a separate schedule list                                                                 |
-| Family      | Name/color on the left, email/role on the right, admin first; one editor; pending email visually subdued; collapsible responsibility/benefit lists |
-| Reports     | Date range and two CSV reports: obligations and payments                                                                                           |
-| Settings    | Household name/shared color, currencies, locale/timezone, sessions and leaving; transfer head through a confirmed member's role                    |
+Use a saved `domovoy-language` preference first. On first use choose Russian when
+browser language preferences include Russian or the connection country is Russia,
+Belarus or Ukraine; otherwise choose English and persist that choice. Active OS
+keyboard layout is not reliably exposed by browsers, so browser/system language
+preferences are the available signal. Country lookup failure falls back to English
+without blocking login. Language selection is also available on the welcome and
+onboarding screens.
+
+Synchronize the chosen language to the authenticated account on application use
+and language changes. Household locale stays separate. Telegram uses the recipient's
+latest stored language when claiming delivery, with household locale as fallback;
+successful linking replies use that account preference as well.
+
+Member cards show identity and role first, matching framed Email and Telegram rows
+next, and benefit/responsibility lists last. Telegram details expand from the row.
+Settings use independent columns: appearance and devices on the left, household
+and framed family participation on the right; narrow screens stack the columns.
+
+| Screen      | Requirements                                                                                                                        |
+| ----------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| Sign-in     | Google only; no demo or user-facing infrastructure credentials                                                                      |
+| No family   | Create a family or understand/accept an invitation                                                                                  |
+| Overview    | Four summary metrics, two monthly charts, grouped obligations and upcoming payments                                                 |
+| Obligations | Optional responsible person, separate beneficiaries, end date, weekly recurrence, automatic schedule and icon                       |
+| Payments    | Obligation-first entry, original/base amounts, credit and a separate schedule list                                                  |
+| Family      | Identity/role header, framed Email and collapsible Telegram rows, then responsibility/benefit lists; pending email visually subdued |
+| Reports     | Date range and two CSV reports: obligations and payments                                                                            |
+| Settings    | Household name/shared color, currencies, locale/timezone, sessions and leaving; transfer head through a confirmed member's role     |
 
 Group one obligation's charges in the selected month into one row, with first/last
 dates, total amount and aggregate status. Show paid/total for partial settlement,

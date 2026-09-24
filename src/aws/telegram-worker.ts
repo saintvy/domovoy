@@ -2,6 +2,7 @@ import { randomUUID, timingSafeEqual } from 'node:crypto';
 import { LambdaClient, InvokeCommand } from '@aws-sdk/client-lambda';
 import { SSMClient, GetParameterCommand } from '@aws-sdk/client-ssm';
 import { S3Client, DeleteObjectCommand } from '@aws-sdk/client-s3';
+import { normalizeAppLocale } from '../shared/locale';
 
 type DeliveryOutcome = 'accepted' | 'retryable' | 'failed' | 'unknown';
 interface WorkerDependencies {
@@ -16,6 +17,20 @@ const response = (statusCode: number, body: unknown = { ok: true }) => ({
   headers: { 'content-type': 'application/json', 'cache-control': 'no-store' },
   body: JSON.stringify(body),
 });
+const linkReply = {
+  ru: {
+    connected:
+      '✅ Telegram привязан к Домовому. Настройки отчетов доступны в приложении.',
+    invalid:
+      'Ссылка недействительна или истекла. Создайте новую ссылку в настройках Домового.',
+  },
+  en: {
+    connected:
+      '✅ Telegram is connected to Domovoy. Report settings are available in the app.',
+    invalid:
+      'This link is invalid or has expired. Create a new link in Domovoy settings.',
+  },
+} as const;
 
 /** Dependency injection keeps failure tests independent of credentials and live chats. */
 export function createTelegramWorker(deps: WorkerDependencies) {
@@ -175,12 +190,16 @@ export function createTelegramWorker(deps: WorkerDependencies) {
               ? message.from.username
               : undefined,
         });
+        const locale = normalizeAppLocale(
+          result?.ok ? result.locale : message.from.language_code,
+          normalizeAppLocale(message.from.language_code, 'en'),
+        );
         return response(200, {
           method: 'sendMessage',
           chat_id: String(message.chat.id),
           text: result?.ok
-            ? '✅ Telegram привязан к Домовому. Настройки отчетов доступны в приложении.'
-            : 'Ссылка недействительна или истекла. Создайте новую ссылку в настройках Домового.',
+            ? linkReply[locale].connected
+            : linkReply[locale].invalid,
         });
       } catch {
         return response(503);

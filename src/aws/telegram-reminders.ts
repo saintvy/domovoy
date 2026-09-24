@@ -10,6 +10,7 @@ import {
 } from '../domain';
 import type { Database, SqlClient } from './database';
 import { check } from './identity';
+import { normalizeAppLocale, type AppLocale } from '../shared/locale';
 
 export interface TelegramReportPublisher {
   queueTelegramReport?: (jobId: string) => Promise<void>;
@@ -340,35 +341,63 @@ export async function persistOnceReceipts(
   }
 }
 
-function formatDate(date: string) {
+function formatDate(date: string, locale: AppLocale) {
   const [year, month, day] = date.split('-');
-  return `${day}.${month}.${year}`;
+  return locale === 'ru'
+    ? `${day}.${month}.${year}`
+    : `${day}/${month}/${year}`;
 }
 
-function formatItem(item: TelegramReportItem) {
+const reportCopy = {
+  ru: {
+    unknown: 'сумма уточняется',
+    estimate: 'оценка',
+    credit: 'есть нераспределённый кредит; остаток требует проверки',
+    headings: {
+      overdue: '⚠️ Просрочено:',
+      due: '📅 К оплате:',
+      automatic: '🔄 Автоплатеж:',
+    },
+  },
+  en: {
+    unknown: 'amount to be confirmed',
+    estimate: 'estimate',
+    credit: 'unallocated credit exists; the balance needs review',
+    headings: {
+      overdue: '⚠️ Overdue:',
+      due: '📅 Due:',
+      automatic: '🔄 Automatic payment:',
+    },
+  },
+} as const;
+
+function formatItem(item: TelegramReportItem, locale: AppLocale) {
+  const copy = reportCopy[locale];
   const amount =
     item.amount === undefined
-      ? 'сумма уточняется'
-      : `${formatMoney(item.amount, item.currency, 'ru')}${
-          item.amountState === 'estimated' ? ' (оценка)' : ''
+      ? copy.unknown
+      : `${formatMoney(item.amount, item.currency, locale)}${
+          item.amountState === 'estimated' ? ` (${copy.estimate})` : ''
         }`;
-  const credit = item.creditNeedsReview
-    ? ' (есть нераспределённый кредит; остаток требует проверки)'
-    : '';
-  return `• ${item.title} — ${amount}${credit}, ${formatDate(item.dueDate)}`;
+  const credit = item.creditNeedsReview ? ` (${copy.credit})` : '';
+  return `• ${item.title} — ${amount}${credit}, ${formatDate(item.dueDate, locale)}`;
 }
 
-function renderTelegramReport(items: TelegramReportItem[]): string {
+function renderTelegramReport(
+  items: TelegramReportItem[],
+  locale: AppLocale,
+): string {
+  const copy = reportCopy[locale];
   const headings: Array<[TelegramReportItem['section'], string]> = [
-    ['overdue', '⚠️ Просрочено:'],
-    ['due', '📅 К оплате:'],
-    ['automatic', '🔄 Автоплатеж:'],
+    ['overdue', copy.headings.overdue],
+    ['due', copy.headings.due],
+    ['automatic', copy.headings.automatic],
   ];
   return headings
     .map(([section, heading]) => {
       const rows = items.filter((item) => item.section === section);
       return rows.length
-        ? `${heading}\n${rows.map(formatItem).join('\n')}`
+        ? `${heading}\n${rows.map((item) => formatItem(item, locale)).join('\n')}`
         : '';
     })
     .filter(Boolean)
@@ -377,19 +406,20 @@ function renderTelegramReport(items: TelegramReportItem[]): string {
 
 export function splitTelegramReport(
   items: TelegramReportItem[],
+  locale: AppLocale = 'ru',
 ): TelegramReportItem[][] {
   const parts: TelegramReportItem[][] = [];
   let current: TelegramReportItem[] = [];
   for (const item of items) {
     const candidate = [...current, item];
-    if (renderTelegramReport(candidate).length <= 4096) {
+    if (renderTelegramReport(candidate, locale).length <= 4096) {
       current = candidate;
       continue;
     }
     if (current.length) parts.push(current);
     current = [item];
     check(
-      renderTelegramReport(current).length <= 4096,
+      renderTelegramReport(current, locale).length <= 4096,
       'TELEGRAM_REPORT_ITEM_TOO_LARGE',
     );
   }
@@ -397,8 +427,11 @@ export function splitTelegramReport(
   return parts;
 }
 
-export function formatTelegramReport(items: TelegramReportItem[]): string {
-  return renderTelegramReport(items);
+export function formatTelegramReport(
+  items: TelegramReportItem[],
+  locale: AppLocale = 'ru',
+): string {
+  return renderTelegramReport(items, locale);
 }
 
 export async function selectCurrentReport(
@@ -417,7 +450,7 @@ export async function selectCurrentReport(
 > {
   const current = (
     await client.query(
-      'SELECT j.*,f.state,m.person_id,l.chat_id FROM brownie_telegram_report_jobs j JOIN brownie_families f ON f.id=j.family_id AND f.generation=j.family_generation JOIN brownie_memberships m ON m.subject=j.subject AND m.family_id=j.family_id JOIN brownie_telegram_links l ON l.subject=j.subject AND l.family_id=j.family_id AND l.linked_at=j.telegram_linked_at WHERE j.id=$1 AND f.deleted_at IS NULL',
+      'SELECT j.*,f.state,m.person_id,l.chat_id,a.preferred_locale FROM brownie_telegram_report_jobs j JOIN brownie_families f ON f.id=j.family_id AND f.generation=j.family_generation JOIN brownie_memberships m ON m.subject=j.subject AND m.family_id=j.family_id JOIN brownie_accounts a ON a.subject=j.subject JOIN brownie_telegram_links l ON l.subject=j.subject AND l.family_id=j.family_id AND l.linked_at=j.telegram_linked_at WHERE j.id=$1 AND f.deleted_at IS NULL',
       [job.id],
     )
   ).rows[0];
@@ -432,6 +465,10 @@ export async function selectCurrentReport(
     receiptRows.map((row) => `${row.obligation_id}:${row.period_id}`),
   );
   const state = current.state as State;
+  const locale = normalizeAppLocale(
+    current.preferred_locale,
+    normalizeAppLocale(state.household.locale, 'en'),
+  );
   let items = selectTelegramReportItems(state, {
     today: householdToday(state, new Date(now)),
     recipientPersonId: current.person_id,
@@ -444,7 +481,7 @@ export async function selectCurrentReport(
     );
   }
   if (!items.length) return undefined;
-  const parts = splitTelegramReport(items);
+  const parts = splitTelegramReport(items, locale);
   const included = parts[0];
   const obligations = new Map(
     state.obligations.map((value) => [value.id, value]),
@@ -462,7 +499,7 @@ export async function selectCurrentReport(
     part.map((item) => `${item.obligationId}:${item.periodId}`);
   return {
     chatId: current.chat_id,
-    text: renderTelegramReport(included),
+    text: renderTelegramReport(included, locale),
     itemKeys: keys(included),
     onceKeys,
     continuationItemKeys: parts.slice(1).map(keys),

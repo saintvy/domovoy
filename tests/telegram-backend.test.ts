@@ -1,6 +1,10 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { randomUUID } from 'node:crypto';
-import { FamilyApplication, type FamilyServices } from '../src/aws/families';
+import {
+  FamilyApplication,
+  type FamilyServices,
+  type InvitationMessage,
+} from '../src/aws/families';
 import { createLocalDatabase } from '../src/aws/local-database';
 import { handleTelegramBridge } from '../src/aws/telegram-bridge';
 import {
@@ -18,6 +22,7 @@ describe('Telegram reminder backend', () => {
   let now: number;
   let queued: string[];
   let invitationUrl: string | undefined;
+  let invitationMessage: InvitationMessage | undefined;
   const alice: Identity = {
     subject: 'telegram-alice',
     email: 'telegram-alice@example.test',
@@ -71,6 +76,7 @@ describe('Telegram reminder backend', () => {
     now = Date.UTC(2026, 8, 23, 7);
     queued = [];
     invitationUrl = undefined;
+    invitationMessage = undefined;
     services = {
       appOrigin: 'https://domovoy.test',
       clock: () => now,
@@ -79,6 +85,7 @@ describe('Telegram reminder backend', () => {
       },
       sendInvitation: async (message) => {
         invitationUrl = message.url;
+        invitationMessage = message;
       },
     };
     app = new FamilyApplication(local.database, services);
@@ -151,6 +158,84 @@ describe('Telegram reminder backend', () => {
     expect((await request('/family/members')).members[0].telegram).toEqual({
       linked: false,
     });
+  });
+
+  it('stores only the verified actor preference for onboarding and member sessions', async () => {
+    expect(
+      await request(
+        '/account/preferences',
+        'PATCH',
+        { locale: 'en', subject: alice.subject },
+        bob,
+        '',
+      ),
+    ).toEqual({ ok: true });
+    await expect(
+      request('/account/preferences', 'PATCH', { locale: 'de' }, bob, ''),
+    ).rejects.toMatchObject({ code: 'VALIDATION_FAILED' });
+    const accounts = await local.postgres.query<{
+      subject: string;
+      preferred_locale: string | null;
+    }>(
+      'SELECT subject,preferred_locale FROM brownie_accounts WHERE subject IN ($1,$2) ORDER BY subject',
+      [alice.subject, bob.subject],
+    );
+    expect(
+      new Map(accounts.rows.map((row) => [row.subject, row.preferred_locale])),
+    ).toEqual(
+      new Map([
+        [alice.subject, null],
+        [bob.subject, 'en'],
+      ]),
+    );
+
+    const localized = await request(
+      '/auth/session',
+      'POST',
+      { locale: 'en' },
+      alice,
+      '',
+    );
+    expect(localized.user.preferredLocale).toBe('en');
+    const preserved = await request('/auth/session', 'POST', {}, alice, '');
+    expect(preserved.user.preferredLocale).toBe('en');
+  });
+
+  it('uses the latest account locale for reports and returns the original locale on link replay', async () => {
+    await createDueOnceReminder();
+    const token = await linkToken();
+    await request('/account/preferences', 'PATCH', { locale: 'en' });
+    expect(await consume(token, 12)).toEqual({ ok: true, locale: 'en' });
+    await request('/account/preferences', 'PATCH', { locale: 'ru' });
+    expect(await consume(token, 12)).toEqual({ ok: true, locale: 'en' });
+
+    const jobId = await makeDueJob();
+    await request('/account/preferences', 'PATCH', { locale: 'en' });
+    const report = await handleTelegramBridge(local.database, services, {
+      action: 'telegram.begin-delivery',
+      jobId,
+      attemptId: 'localized-report',
+    });
+    expect(report).toMatchObject({ send: true });
+    if ('send' in report && report.send) {
+      expect(report.text).toContain('📅 Due:');
+      expect(report.text).not.toContain('К оплате');
+    }
+  });
+
+  it('prefers the known recipient locale when queuing an invitation', async () => {
+    await request('/account/preferences', 'PATCH', { locale: 'ru' });
+    await request('/account/preferences', 'PATCH', { locale: 'en' }, bob, '');
+    const personId = randomUUID();
+    await commit([
+      { type: 'AddPerson', payload: { id: personId, displayName: 'Bob' } },
+    ]);
+    await request('/family/invitations', 'POST', {
+      personId,
+      email: bob.email,
+      role: 'observer',
+    });
+    expect(invitationMessage?.locale).toBe('en');
   });
 
   it('initializes only a joining member and preserves overrides when the family default changes', async () => {

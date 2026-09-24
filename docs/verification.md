@@ -46,6 +46,15 @@ UTC cron and disabled initial rollout. Live Telegram delivery requires an actual
 member to complete the one-use link; mock provider tests and SSM provisioning
 do not prove delivery to a real chat.
 
+Invitation regression checks cover a fragment arriving after application startup,
+the Google logout/PKCE/callback sequence, and acceptance into the existing household
+with the invited role. Language tests cover saved/browser/country precedence,
+geography failure and late-response races, authenticated account preferences,
+recipient language at Telegram claim, and escaped bilingual email templates.
+The browser OAuth test uses intercepted identity-provider responses; it does not
+claim a live Google sign-in. Layout checks remain shallow, including desktop/mobile
+family cards and independent settings columns.
+
 For a hosted release, additionally complete the checks in
 [deployment](deployment.md#cloud-acceptance-and-operations). Record the commit,
 environment, commands, outcomes and any skipped acceptance cases in the release

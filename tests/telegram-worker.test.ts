@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
 import { createTelegramWorker } from '../src/aws/telegram-worker';
 
 const jobId = '11111111-1111-4111-8111-111111111111';
@@ -170,6 +171,41 @@ describe('Telegram worker delivery trust and failure boundaries', () => {
       username: 'example',
     });
     expect(f.request).not.toHaveBeenCalled();
+  });
+  it('uses account locale for success and Telegram language for invalid links', async () => {
+    const success = fixture();
+    success.bridge.mockResolvedValue({ ok: true, locale: 'ru' });
+    const successResponse = await success.worker(webhook(update));
+    expect(successResponse).toHaveProperty('statusCode', 200);
+    expect(
+      JSON.parse('body' in successResponse ? successResponse.body : '{}').text,
+    ).toContain('Telegram привязан');
+
+    const invalid = fixture();
+    invalid.bridge.mockResolvedValue({ ok: false });
+    const invalidResponse = await invalid.worker(
+      webhook({
+        ...update,
+        update_id: 11,
+        message: {
+          ...update.message,
+          from: { ...update.message.from, language_code: 'ru-RU' },
+        },
+      }),
+    );
+    expect(invalidResponse).toHaveProperty('statusCode', 200);
+    expect(
+      JSON.parse('body' in invalidResponse ? invalidResponse.body : '{}').text,
+    ).toContain('Ссылка недействительна');
+  });
+  it('contains no SQL connection path or database credentials', () => {
+    const source = readFileSync(
+      new URL('../src/aws/telegram-worker.ts', import.meta.url),
+      'utf8',
+    );
+    expect(source).not.toMatch(
+      /PGHOST|PGPASSWORD|createDatabase|from ['"]pg['"]/,
+    );
   });
   it('ignores groups and mismatched sender identity, bounds payloads, retries bridge failure', async () => {
     const f = fixture();

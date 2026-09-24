@@ -8,11 +8,12 @@ import {
   type CSSProperties,
   type FormEvent,
 } from 'react';
-import { ChevronDown } from 'lucide-react';
+import { ChevronDown, Mail } from 'lucide-react';
 import { householdToday, type DailyReportTime, type State } from '../domain';
 import { availableFamilyObligations } from './family-availability';
 import { api, db, type User } from './store';
-import { clearInvitation, pendingInvitation } from './auth';
+import { clearInvitation, pendingInvitation, INVITATION_CHANGED } from './auth';
+import { readLanguage } from './language';
 
 type Translator = (ru: string, en: string) => string;
 type Change = () => Promise<void>;
@@ -51,6 +52,11 @@ export function FamilyOnboarding({
   const [busy, setBusy] = useState(false),
     [error, setError] = useState(''),
     [invite, setInvite] = useState(pendingInvitation());
+  useEffect(() => {
+    const update = () => setInvite(pendingInvitation());
+    window.addEventListener(INVITATION_CHANGED, update);
+    return () => window.removeEventListener(INVITATION_CHANGED, update);
+  }, []);
   async function perform(body: unknown, path: string) {
     setBusy(true);
     setError('');
@@ -112,7 +118,7 @@ export function FamilyOnboarding({
                 name: data.get('name'),
                 currency: data.get('currency'),
                 timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-                locale: 'ru',
+                locale: readLanguage(),
               },
               '/families',
             );
@@ -180,6 +186,13 @@ interface Access {
   invitations: Invitation[];
   invitationsEnabled: boolean;
 }
+function TelegramLogo() {
+  return (
+    <svg className="family-contact-icon" viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M21.6 3.2 18.4 20c-.2 1.2-.9 1.5-1.9.9l-4.9-3.6-2.4 2.3c-.3.3-.5.5-1 .5l.4-5 9.1-8.2c.4-.4-.1-.6-.6-.2L5.8 13.8 1 12.3c-1-.3-1-1 .2-1.5L20 3.5c.9-.3 1.7.2 1.6-.3Z" />
+    </svg>
+  );
+}
 function TelegramMemberSettings({
   member,
   familyTime,
@@ -233,142 +246,152 @@ function TelegramMemberSettings({
     }
   }
   return (
-    <div className="family-telegram-settings">
-      <div className="family-telegram-heading">
-        <strong>Telegram</strong>
-        <span className={member.telegram?.linked ? 'badge-soft' : 'muted'}>
+    <details className="family-contact-strip family-telegram-details">
+      <summary className="family-contact-summary">
+        <span className="family-contact-label">
+          <TelegramLogo />
+          <strong>Telegram</strong>
+        </span>
+        <span
+          className={
+            'family-contact-chip' +
+            (member.telegram?.linked ? ' is-linked' : '')
+          }
+        >
           {member.telegram?.linked
             ? member.telegram.username
               ? `@${member.telegram.username.replace(/^@/, '')}`
               : t('Привязан', 'Linked')
-            : t('Не привязан', 'Not linked')}
+            : t('Привязать', 'Link')}
         </span>
-      </div>
-      {isSelf && (
-        <div className="family-telegram-actions">
-          <button
-            type="button"
-            className="button secondary"
-            disabled={busy}
-            onClick={() => void request('/telegram/link', {})}
-          >
-            {member.telegram?.linked
-              ? t('Перепривязать Telegram', 'Relink Telegram')
-              : t('Привязать Telegram', 'Link Telegram')}
-          </button>
-          {member.telegram?.linked && (
+      </summary>
+      <div className="family-telegram-settings">
+        {isSelf && (
+          <div className="family-telegram-actions">
             <button
               type="button"
-              className="text-button danger-text"
+              className="button secondary"
               disabled={busy}
+              onClick={() => void request('/telegram/link', {})}
+            >
+              {member.telegram?.linked
+                ? t('Перепривязать Telegram', 'Relink Telegram')
+                : t('Привязать Telegram', 'Link Telegram')}
+            </button>
+            {member.telegram?.linked && (
+              <button
+                type="button"
+                className="text-button danger-text"
+                disabled={busy}
+                onClick={() =>
+                  void request('/telegram/link', undefined, 'DELETE')
+                }
+              >
+                {t('Отвязать', 'Unlink')}
+              </button>
+            )}
+          </div>
+        )}
+        {isSelf && link && (
+          <p className="family-telegram-link">
+            <a
+              className="button primary"
+              href={link.url}
+              target="_blank"
+              rel="noreferrer"
+            >
+              {t('Открыть Telegram', 'Open Telegram')}
+            </a>
+            <small>
+              {t('Ссылка действует до', 'Link expires at')}:{' '}
+              {new Date(link.expiresAt).toLocaleString(t('ru-RU', 'en-GB'))}
+            </small>
+          </p>
+        )}
+        {canSchedule && (
+          <div className="family-telegram-schedule">
+            <label className="checkbox-row">
+              <input
+                type="checkbox"
+                checked={inherit}
+                disabled={busy}
+                onChange={(event) => {
+                  setInherit(event.target.checked);
+                  if (!event.target.checked) {
+                    setHour(familyTime.hour);
+                    setTimeZone(
+                      Intl.DateTimeFormat().resolvedOptions().timeZone ||
+                        familyTime.timeZone,
+                    );
+                  }
+                }}
+              />
+              {t('Использовать время семьи', 'Use household report time')}
+            </label>
+            {!inherit && (
+              <div className="form-grid">
+                <label className="field">
+                  <span>{t('Местный час', 'Local hour')}</span>
+                  <select
+                    value={hour}
+                    disabled={busy}
+                    onChange={(event) => setHour(Number(event.target.value))}
+                  >
+                    {Array.from({ length: 24 }, (_, value) => (
+                      <option value={value} key={value}>
+                        {String(value).padStart(2, '0')}:00
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="field">
+                  <span>{t('Часовой пояс', 'Timezone')}</span>
+                  <input
+                    value={timeZone}
+                    disabled={busy}
+                    onChange={(event) => setTimeZone(event.target.value)}
+                  />
+                </label>
+              </div>
+            )}
+            <small className="muted">
+              {t(
+                'Местный час сохраняется при переходе на летнее время. Для часовых поясов со смещением на неполный час отчёт придёт при первом часовом запуске после выбранного времени.',
+                'The local hour is preserved across daylight-saving changes. For partial-hour timezones, delivery occurs on the first hourly run after the selected time.',
+              )}
+            </small>
+            <button
+              type="button"
+              className="button secondary"
+              disabled={busy || (!inherit && !timeZone.trim())}
               onClick={() =>
-                void request('/telegram/link', undefined, 'DELETE')
+                void request(
+                  `/family/members/${encodeURIComponent(member.id)}/reminders`,
+                  {
+                    telegramReportTime: inherit
+                      ? null
+                      : { hour, timeZone: timeZone.trim() },
+                  },
+                  'PATCH',
+                )
               }
             >
-              {t('Отвязать', 'Unlink')}
+              {t('Сохранить время отчёта', 'Save report time')}
             </button>
-          )}
-        </div>
-      )}
-      {isSelf && link && (
-        <p className="family-telegram-link">
-          <a
-            className="button primary"
-            href={link.url}
-            target="_blank"
-            rel="noreferrer"
-          >
-            {t('Открыть Telegram', 'Open Telegram')}
-          </a>
-          <small>
-            {t('Ссылка действует до', 'Link expires at')}:{' '}
-            {new Date(link.expiresAt).toLocaleString(t('ru-RU', 'en-GB'))}
-          </small>
-        </p>
-      )}
-      {canSchedule && (
-        <div className="family-telegram-schedule">
-          <label className="checkbox-row">
-            <input
-              type="checkbox"
-              checked={inherit}
-              disabled={busy}
-              onChange={(event) => {
-                setInherit(event.target.checked);
-                if (!event.target.checked) {
-                  setHour(familyTime.hour);
-                  setTimeZone(
-                    Intl.DateTimeFormat().resolvedOptions().timeZone ||
-                      familyTime.timeZone,
-                  );
-                }
-              }}
-            />
-            {t('Использовать время семьи', 'Use household report time')}
-          </label>
-          {!inherit && (
-            <div className="form-grid">
-              <label className="field">
-                <span>{t('Местный час', 'Local hour')}</span>
-                <select
-                  value={hour}
-                  disabled={busy}
-                  onChange={(event) => setHour(Number(event.target.value))}
-                >
-                  {Array.from({ length: 24 }, (_, value) => (
-                    <option value={value} key={value}>
-                      {String(value).padStart(2, '0')}:00
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="field">
-                <span>{t('Часовой пояс', 'Timezone')}</span>
-                <input
-                  value={timeZone}
-                  disabled={busy}
-                  onChange={(event) => setTimeZone(event.target.value)}
-                />
-              </label>
-            </div>
-          )}
-          <small className="muted">
-            {t(
-              'Местный час сохраняется при переходе на летнее время. Для часовых поясов со смещением на неполный час отчёт придёт при первом часовом запуске после выбранного времени.',
-              'The local hour is preserved across daylight-saving changes. For partial-hour timezones, delivery occurs on the first hourly run after the selected time.',
+            {member.nextReportAt && (
+              <small>
+                {t('Следующий отчёт', 'Next report')}:{' '}
+                {new Date(member.nextReportAt).toLocaleString(
+                  t('ru-RU', 'en-GB'),
+                  { timeZone: effective.timeZone },
+                )}{' '}
+                ({effective.timeZone})
+              </small>
             )}
-          </small>
-          <button
-            type="button"
-            className="button secondary"
-            disabled={busy || (!inherit && !timeZone.trim())}
-            onClick={() =>
-              void request(
-                `/family/members/${encodeURIComponent(member.id)}/reminders`,
-                {
-                  telegramReportTime: inherit
-                    ? null
-                    : { hour, timeZone: timeZone.trim() },
-                },
-                'PATCH',
-              )
-            }
-          >
-            {t('Сохранить время отчёта', 'Save report time')}
-          </button>
-          {member.nextReportAt && (
-            <small>
-              {t('Следующий отчёт', 'Next report')}:{' '}
-              {new Date(member.nextReportAt).toLocaleString(
-                t('ru-RU', 'en-GB'),
-                { timeZone: effective.timeZone },
-              )}{' '}
-              ({effective.timeZone})
-            </small>
-          )}
-        </div>
-      )}
-    </div>
+          </div>
+        )}
+      </div>
+    </details>
   );
 }
 const memberRoles = ['observer', 'editor', 'own_editor', 'deleter'] as const;
@@ -736,29 +759,6 @@ export function FamilyAccessPanel({
                   <div className="family-person-name">{personName}</div>
                 )}
                 <div className="family-person-access">
-                  <div
-                    className={
-                      'family-person-email' +
-                      (invitation && !member ? ' is-pending' : '')
-                    }
-                  >
-                    {admin ? (
-                      <button
-                        className="text-button"
-                        disabled={busy || !access}
-                        onClick={() => openEmail(person.id, address ?? '')}
-                      >
-                        {address ?? t('Добавить email', 'Add email')}
-                      </button>
-                    ) : (
-                      <span>{address ?? t('Без аккаунта', 'No account')}</span>
-                    )}
-                    {invitation && !member && (
-                      <small>
-                        {t('Email не подтверждён', 'Email not confirmed')}
-                      </small>
-                    )}
-                  </div>
                   {admin ? (
                     <select
                       aria-label={t('Роль: ', 'Role: ') + person.displayName}
@@ -784,6 +784,37 @@ export function FamilyAccessPanel({
                   )}
                 </div>
               </header>
+              <div className="family-contact-strip family-email-strip">
+                <span className="family-contact-label">
+                  <Mail className="family-contact-icon" aria-hidden="true" />
+                  <strong>Email</strong>
+                </span>
+                <div
+                  className={
+                    'family-person-email' +
+                    (invitation && !member ? ' is-pending' : '')
+                  }
+                >
+                  {admin ? (
+                    <button
+                      className="family-contact-chip"
+                      disabled={busy || !access}
+                      onClick={() => openEmail(person.id, address ?? '')}
+                    >
+                      {address ?? t('Добавить email', 'Add email')}
+                    </button>
+                  ) : (
+                    <span className="family-contact-chip">
+                      {address ?? t('Добавить email', 'Add email')}
+                    </span>
+                  )}
+                  {invitation && !member && (
+                    <small>
+                      {t('Email не подтверждён', 'Email not confirmed')}
+                    </small>
+                  )}
+                </div>
+              </div>
               {member && (admin || member.id === user.id) && (
                 <TelegramMemberSettings
                   member={member}
@@ -801,6 +832,21 @@ export function FamilyAccessPanel({
                   reportError={setError}
                   t={t}
                 />
+              )}
+              {(!member || (!admin && member.id !== user.id)) && (
+                <div className="family-contact-strip family-telegram-unavailable">
+                  <span className="family-contact-label">
+                    <TelegramLogo />
+                    <strong>Telegram</strong>
+                  </span>
+                  <span className="family-contact-chip">
+                    {member?.telegram?.username
+                      ? `@${member.telegram.username.replace(/^@/, '')}`
+                      : member?.telegram?.linked
+                        ? t('Привязан', 'Linked')
+                        : t('Привязать', 'Link')}
+                  </span>
+                </div>
               )}
               <div className="family-person-obligations">
                 {groups.map((group) => {
@@ -1075,7 +1121,7 @@ export function FamilyAccountSettings({
     }
   }
   return (
-    <section className="settings-section">
+    <section className="panel settings-section family-account-settings-card">
       <h3>{t('Участие в семье', 'Household membership')}</h3>
       {error && (
         <p className="notice danger" role="alert">

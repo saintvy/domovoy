@@ -809,6 +809,44 @@ export class BrownieAppStack extends Stack {
       methods: [apigw.HttpMethod.GET],
       integration,
     });
+    // Separate API ID avoids a Distribution -> API CORS -> Distribution cycle
+    // on deployments without a custom domain. Reuse compute; no database work.
+    const localeApi = new apigw.HttpApi(this, 'LocaleHttpApi');
+    localeApi.addRoutes({
+      path: '/api/locale',
+      methods: [apigw.HttpMethod.GET],
+      integration: new HttpLambdaIntegration('LocaleIntegration', fn),
+    });
+    const localeStage = localeApi.defaultStage?.node.defaultChild as
+      apigw.CfnStage | undefined;
+    if (localeStage)
+      localeStage.defaultRouteSettings = {
+        throttlingBurstLimit: 10,
+        throttlingRateLimit: 5,
+      };
+    distribution.addBehavior(
+      '/api/locale',
+      new origins.HttpOrigin(
+        Fn.select(2, Fn.split('/', localeApi.apiEndpoint)),
+      ),
+      {
+        viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
+        cachePolicy: cloudfront.CachePolicy.CACHING_DISABLED,
+        originRequestPolicy: new cloudfront.OriginRequestPolicy(
+          this,
+          'LocaleCountryPolicy',
+          {
+            headerBehavior: cloudfront.OriginRequestHeaderBehavior.allowList(
+              'CloudFront-Viewer-Country',
+            ),
+            cookieBehavior: cloudfront.OriginRequestCookieBehavior.none(),
+            queryStringBehavior:
+              cloudfront.OriginRequestQueryStringBehavior.none(),
+          },
+        ),
+        responseHeadersPolicy: headers,
+      },
+    );
     const stage = api.defaultStage?.node.defaultChild as
       apigw.CfnStage | undefined;
     if (stage)

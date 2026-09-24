@@ -124,6 +124,14 @@ test('links the current member and stores a per-member local report override', a
   await page
     .getByRole('button', { name: 'Семья и доступы', exact: true })
     .click();
+  const telegramDetails = page.locator('.family-telegram-details').first();
+  await expect(telegramDetails).not.toHaveAttribute('open', '');
+  await page.screenshot({
+    path: 'test-results/telegram-reminder-family-collapsed.png',
+    fullPage: true,
+  });
+  await telegramDetails.locator('summary').click();
+  await expect(telegramDetails).toHaveAttribute('open', '');
   await page
     .getByRole('button', { name: 'Привязать Telegram', exact: true })
     .click();

@@ -156,6 +156,51 @@ const financialRoute = entries.find(
     resource.Properties.RouteKey === 'ANY /api/{proxy+}',
 )[1];
 assert.equal(financialRoute.Properties.AuthorizationType, 'JWT');
+const localeRoute = entries.find(
+  ([, resource]) =>
+    resource.Type === 'AWS::ApiGatewayV2::Route' &&
+    resource.Properties.RouteKey === 'GET /api/locale',
+)[1];
+assert.equal(localeRoute.Properties.AuthorizationType, 'NONE');
+const localeApiId = localeRoute.Properties.ApiId.Ref;
+assert.equal(
+  app.Resources[localeApiId].Properties.CorsConfiguration,
+  undefined,
+);
+assert.equal(
+  entries.filter(
+    ([, resource]) =>
+      resource.Type === 'AWS::ApiGatewayV2::Route' &&
+      resource.Properties.ApiId.Ref === localeApiId,
+  ).length,
+  1,
+);
+const localePolicy = entries.find(
+  ([id, resource]) =>
+    id.startsWith('LocaleCountryPolicy') &&
+    resource.Type === 'AWS::CloudFront::OriginRequestPolicy',
+);
+assert.deepEqual(
+  localePolicy[1].Properties.OriginRequestPolicyConfig.HeadersConfig,
+  {
+    HeaderBehavior: 'whitelist',
+    Headers: ['CloudFront-Viewer-Country'],
+  },
+);
+const distribution = entries.find(
+  ([, resource]) => resource.Type === 'AWS::CloudFront::Distribution',
+)[1];
+const localeBehavior =
+  distribution.Properties.DistributionConfig.CacheBehaviors.find(
+    (behavior) => behavior.PathPattern === '/api/locale',
+  );
+assert.equal(
+  localeBehavior.CachePolicyId,
+  '4135ea2d-6df8-44a3-9df3-4b5a84be39ad',
+); // AWS CachingDisabled
+assert.deepEqual(localeBehavior.OriginRequestPolicyId, {
+  Ref: localePolicy[0],
+});
 const workerPolicy = entries.find(
   ([id, resource]) =>
     id.startsWith('TelegramWorkerServiceRoleDefaultPolicy') &&

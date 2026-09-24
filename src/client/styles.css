@@ -1687,6 +1687,20 @@ a {
   gap: 22px;
   align-items: start;
 }
+.settings-column {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+  min-width: 0;
+}
+.welcome-language {
+  position: fixed;
+  top: 18px;
+  right: 20px;
+  z-index: 20;
+  background: var(--surface, #fff);
+  border: 1px solid var(--border, #dce6dd);
+}
 .settings-section {
   margin-bottom: 0;
 }

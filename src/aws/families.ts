@@ -29,6 +29,11 @@ import {
   validateDailyReportTime,
   type TelegramReportPublisher,
 } from './telegram-reminders';
+import {
+  isAppLocale,
+  normalizeAppLocale,
+  type AppLocale,
+} from '../shared/locale';
 
 export interface InvitationMessage {
   id: string;
@@ -37,6 +42,7 @@ export interface InvitationMessage {
   familyName: string;
   url: string;
   expiresAt: number;
+  locale?: AppLocale;
 }
 export interface FamilyServices extends TelegramReportPublisher {
   clock?: () => number;
@@ -81,10 +87,33 @@ export class FamilyApplication {
         'INSERT INTO brownie_accounts(subject,email,name) VALUES($1,$2,$3) ON CONFLICT(subject) DO UPDATE SET email=EXCLUDED.email,name=EXCLUDED.name',
         [identity.subject, identity.email, identity.name],
       );
-      await client.query(
-        'SELECT subject FROM brownie_accounts WHERE subject=$1 FOR UPDATE',
-        [identity.subject],
-      );
+      let account = (
+        await client.query(
+          'SELECT * FROM brownie_accounts WHERE subject=$1 FOR UPDATE',
+          [identity.subject],
+        )
+      ).rows[0];
+      if (
+        path === '/auth/session' &&
+        method === 'POST' &&
+        Object.prototype.hasOwnProperty.call(body, 'locale')
+      ) {
+        check(isAppLocale(body.locale), 'VALIDATION_FAILED');
+        account = (
+          await client.query(
+            'UPDATE brownie_accounts SET preferred_locale=$1 WHERE subject=$2 RETURNING *',
+            [body.locale, identity.subject],
+          )
+        ).rows[0];
+      }
+      if (path === '/account/preferences' && method === 'PATCH') {
+        check(isAppLocale(body.locale), 'VALIDATION_FAILED');
+        await client.query(
+          'UPDATE brownie_accounts SET preferred_locale=$1 WHERE subject=$2',
+          [body.locale, identity.subject],
+        );
+        return { ok: true };
+      }
       if (path === '/families' && method === 'POST')
         return this.create(client, identity, body);
       if (path === '/invitations/accept' && method === 'POST')
@@ -104,7 +133,11 @@ export class FamilyApplication {
             initialized: true,
             onboarding: true,
             user: null,
-            identity: { name: identity.name, email: identity.email },
+            identity: {
+              name: identity.name,
+              email: identity.email,
+              preferredLocale: account.preferred_locale ?? undefined,
+            },
             authProvider: 'cognito-google',
           };
         throw new ApiError('FAMILY_REQUIRED', 409);
@@ -124,7 +157,12 @@ export class FamilyApplication {
         )
       ).rows[0];
       check(membership, 'SESSION_REVOKED', 401);
-      const user = this.user(identity, membership, family);
+      const user = this.user(
+        identity,
+        membership,
+        family,
+        account.preferred_locale,
+      );
       if (path === '/auth/session' && method === 'POST')
         return this.login(client, identity, family, user, body);
       const session = await this.authenticate(
@@ -337,7 +375,7 @@ export class FamilyApplication {
       if (path === '/family/members' && method === 'GET') {
         const rows = (
           await client.query(
-            'SELECT m.*,a.email,a.name,l.username AS telegram_username,l.subject AS telegram_linked_subject FROM brownie_memberships m JOIN brownie_accounts a ON a.subject=m.subject LEFT JOIN brownie_telegram_links l ON l.subject=m.subject AND l.family_id=m.family_id WHERE m.family_id=$1 ORDER BY a.name',
+            'SELECT m.*,a.email,a.name,a.preferred_locale,l.username AS telegram_username,l.subject AS telegram_linked_subject FROM brownie_memberships m JOIN brownie_accounts a ON a.subject=m.subject LEFT JOIN brownie_telegram_links l ON l.subject=m.subject AND l.family_id=m.family_id WHERE m.family_id=$1 ORDER BY a.name',
             [family.id],
           )
         ).rows;
@@ -358,6 +396,7 @@ export class FamilyApplication {
               },
               m,
               family,
+              m.preferred_locale,
             ),
             telegram: {
               linked: !!m.telegram_linked_subject,
@@ -381,7 +420,13 @@ export class FamilyApplication {
       }
       if (path === '/family/invitations' && method === 'POST') {
         admin();
-        return this.invite(client, family, identity, body);
+        return this.invite(
+          client,
+          family,
+          identity,
+          body,
+          account.preferred_locale,
+        );
       }
       if (/^\/family\/invitations\/[^/]+$/.test(path) && method === 'DELETE') {
         admin();
@@ -583,7 +628,7 @@ export class FamilyApplication {
       throw new ApiError('NOT_FOUND', 404);
     });
   }
-  private user(identity: Identity, m: any, f: any) {
+  private user(identity: Identity, m: any, f: any, preferredLocale?: unknown) {
     return {
       id: identity.subject,
       login: identity.email,
@@ -594,6 +639,9 @@ export class FamilyApplication {
       role: f.head_subject === identity.subject ? 'admin' : m.role,
       enabled: true,
       familyId: f.id,
+      preferredLocale: isAppLocale(preferredLocale)
+        ? preferredLocale
+        : undefined,
     };
   }
   private sessionInfo(f: any, user: any) {
@@ -827,7 +875,13 @@ export class FamilyApplication {
       revision: after.revision,
     };
   }
-  private async invite(c: SqlClient, f: any, i: Identity, body: any) {
+  private async invite(
+    c: SqlClient,
+    f: any,
+    i: Identity,
+    body: any,
+    inviterLocale?: unknown,
+  ) {
     check(this.services.sendInvitation, 'INVITATION_EMAIL_NOT_CONFIGURED', 503);
     const recent = (
       await c.query(
@@ -865,6 +919,19 @@ export class FamilyApplication {
     const id = randomUUID(),
       token = sessionToken(),
       expiresAt = this.now() + 7 * 86400000;
+    const recipient = (
+      await c.query(
+        'SELECT preferred_locale FROM brownie_accounts WHERE email=$1',
+        [email],
+      )
+    ).rows[0];
+    const locale = normalizeAppLocale(
+      recipient?.preferred_locale,
+      normalizeAppLocale(
+        inviterLocale,
+        normalizeAppLocale(f.state.household.locale, 'en'),
+      ),
+    );
     await c.query(
       'UPDATE brownie_invitations SET revoked_at=$1 WHERE family_id=$2 AND (email=$3 OR person_id=$4) AND accepted_at IS NULL AND revoked_at IS NULL',
       [this.now(), f.id, email, body.personId],
@@ -892,6 +959,7 @@ export class FamilyApplication {
       familyName: f.state.household.name,
       url: url.toString(),
       expiresAt,
+      locale,
     });
     await this.audit(c, f.id, i.subject, 'invitation.created', {
       email,

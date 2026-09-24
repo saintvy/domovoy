@@ -510,8 +510,12 @@ test('family cards wrap at equal natural widths and show paid archived services 
         const email = node
           .querySelector('.family-person-email')!
           .getBoundingClientRect();
+        const role = node
+          .querySelector('.family-person-access')!
+          .getBoundingClientRect();
         return (
-          Math.abs(name.y + name.height / 2 - email.y - email.height / 2) < 1
+          Math.abs(name.y + name.height / 2 - role.y - role.height / 2) < 1 &&
+          email.y >= name.bottom
         );
       }),
     )
