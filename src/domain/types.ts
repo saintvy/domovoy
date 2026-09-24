@@ -1,5 +1,14 @@
 export type ISODate = string;
 export type Cadence = 'weekly' | 'monthly' | 'quarterly' | 'yearly';
+export interface DailyReportTime {
+  hour: number;
+  timeZone: string;
+}
+export interface ReminderSettings {
+  enabled: boolean;
+  daysBefore: number;
+  repeat: 'once' | 'daily';
+}
 export interface Household {
   id: string;
   name: string;
@@ -8,6 +17,7 @@ export interface Household {
   currencies?: string[];
   timezone: string;
   locale: 'ru' | 'en';
+  telegramReportTime?: DailyReportTime;
 }
 export interface Person {
   id: string;
@@ -39,6 +49,7 @@ export interface Obligation {
   lifecycleState: 'active' | 'archived';
   seatCapacity?: number;
   trialEnd?: ISODate;
+  reminder?: ReminderSettings;
 }
 export interface BillingRule {
   id: string;
@@ -202,7 +213,12 @@ export type Command =
         patch: Partial<
           Pick<
             Obligation,
-            'title' | 'category' | 'beneficiaries' | 'iconId' | 'iconColor'
+            | 'title'
+            | 'category'
+            | 'beneficiaries'
+            | 'iconId'
+            | 'iconColor'
+            | 'reminder'
           >
         > & { ownerPersonId?: string | null; activeTo?: ISODate | null };
       };
@@ -264,7 +280,13 @@ export type Command =
       payload: Partial<
         Pick<
           Household,
-          'name' | 'color' | 'currency' | 'currencies' | 'timezone' | 'locale'
+          | 'name'
+          | 'color'
+          | 'currency'
+          | 'currencies'
+          | 'timezone'
+          | 'locale'
+          | 'telegramReportTime'
         >
       >;
     }

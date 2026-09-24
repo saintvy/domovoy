@@ -273,6 +273,11 @@ export class BrownieAppStack extends Stack {
           expiration: Duration.days(7),
           abortIncompleteMultipartUploadAfter: Duration.days(1),
         },
+        {
+          prefix: 'telegram-outbox/',
+          expiration: Duration.days(2),
+          abortIncompleteMultipartUploadAfter: Duration.days(1),
+        },
       ],
     });
     const headers = new cloudfront.ResponseHeadersPolicy(
@@ -671,6 +676,113 @@ export class BrownieAppStack extends Stack {
       },
     });
     const integration = new HttpLambdaIntegration('ApiIntegration', fn);
+    const telegramBridge = new nodejs.NodejsFunction(this, 'TelegramBridge', {
+      entry: resolve('src/aws/telegram-bridge.ts'),
+      handler: 'handler',
+      runtime: lambda.Runtime.NODEJS_22_X,
+      architecture: lambda.Architecture.ARM_64,
+      memorySize: 512,
+      timeout: Duration.seconds(60),
+      reservedConcurrentExecutions: 1,
+      vpc,
+      vpcSubnets: { subnetType: ec2.SubnetType.PRIVATE_ISOLATED },
+      securityGroups: [apiSg],
+      logGroup: new logs.LogGroup(this, 'TelegramBridgeLogs', {
+        retention: logs.RetentionDays.TWO_WEEKS,
+        removalPolicy: RemovalPolicy.DESTROY,
+      }),
+      bundling: {
+        format: nodejs.OutputFormat.ESM,
+        target: 'node22',
+        minify: true,
+        externalModules: [],
+        banner:
+          "import { createRequire } from 'module'; const require = createRequire(import.meta.url);",
+      },
+      environment: {
+        PGHOST: config.databaseHost,
+        PGPORT: '5432',
+        PGDATABASE: config.databaseName,
+        PGUSER: config.databaseUser,
+        PGPASSWORD: dbPassword.valueAsString,
+        PGSSLROOTCERT: '/var/runtime/ca-cert.pem',
+        NODE_EXTRA_CA_CERTS: '/var/runtime/ca-cert.pem',
+        SERVICES_BUCKET: services.bucketName,
+      },
+    });
+    services.grantPut(telegramBridge, 'telegram-outbox/*');
+    const telegramWorker = new nodejs.NodejsFunction(this, 'TelegramWorker', {
+      entry: resolve('src/aws/telegram-worker.ts'),
+      handler: 'handler',
+      runtime: lambda.Runtime.NODEJS_22_X,
+      architecture: lambda.Architecture.ARM_64,
+      memorySize: 256,
+      timeout: Duration.seconds(45),
+      reservedConcurrentExecutions: 2,
+      logGroup: new logs.LogGroup(this, 'TelegramWorkerLogs', {
+        retention: logs.RetentionDays.TWO_WEEKS,
+        removalPolicy: RemovalPolicy.DESTROY,
+      }),
+      bundling: {
+        format: nodejs.OutputFormat.ESM,
+        target: 'node22',
+        minify: true,
+        externalModules: [],
+        banner:
+          "import { createRequire } from 'module'; const require = createRequire(import.meta.url);",
+      },
+      environment: {
+        SERVICES_BUCKET: services.bucketName,
+        TELEGRAM_BRIDGE_FUNCTION: telegramBridge.functionName,
+        TELEGRAM_BOT_TOKEN_PARAMETER: '/domovoy/telegram/bot-token',
+        TELEGRAM_WEBHOOK_SECRET_PARAMETER: '/domovoy/telegram/webhook-secret',
+      },
+    });
+    telegramBridge.grantInvoke(telegramWorker);
+    services.grantDelete(telegramWorker, 'telegram-outbox/*');
+    telegramWorker.addToRolePolicy(
+      new iam.PolicyStatement({
+        actions: ['ssm:GetParameter'],
+        resources: ['bot-token', 'webhook-secret'].map(
+          (name) =>
+            `arn:aws:ssm:${config.region}:${config.brownieAccountId}:parameter/domovoy/telegram/${name}`,
+        ),
+      }),
+    );
+    services.addEventNotification(
+      s3.EventType.OBJECT_CREATED_PUT,
+      new s3notifications.LambdaDestination(telegramWorker),
+      { prefix: 'telegram-outbox/', suffix: '.json' },
+    );
+    const telegramSchedule = new events.Rule(this, 'HourlyTelegramReports', {
+      enabled: config.telegramRemindersEnabled ?? false,
+      schedule: events.Schedule.cron({ minute: '0', hour: '*' }),
+      targets: [
+        new eventTargets.LambdaFunction(telegramBridge, {
+          event: events.RuleTargetInput.fromObject({
+            action: 'telegram.schedule',
+          }),
+          retryAttempts: 2,
+          maxEventAge: Duration.hours(1),
+        }),
+      ],
+    });
+    api.addRoutes({
+      path: '/api/telegram/webhook',
+      methods: [apigw.HttpMethod.POST],
+      integration: new HttpLambdaIntegration(
+        'TelegramWebhookIntegration',
+        telegramWorker,
+      ),
+    });
+    output(this, 'TelegramBridgeName', telegramBridge.functionName);
+    output(this, 'TelegramWorkerName', telegramWorker.functionName);
+    output(this, 'TelegramScheduleName', telegramSchedule.ruleName);
+    output(
+      this,
+      'TelegramWebhookUrl',
+      `${api.apiEndpoint}/api/telegram/webhook`,
+    );
     const authorizer = new HttpJwtAuthorizer(
       'CognitoJwt',
       pool.userPoolProviderUrl,
@@ -697,6 +809,44 @@ export class BrownieAppStack extends Stack {
       methods: [apigw.HttpMethod.GET],
       integration,
     });
+    // Separate API ID avoids a Distribution -> API CORS -> Distribution cycle
+    // on deployments without a custom domain. Reuse compute; no database work.
+    const localeApi = new apigw.HttpApi(this, 'LocaleHttpApi');
+    localeApi.addRoutes({
+      path: '/api/locale',
+      methods: [apigw.HttpMethod.GET],
+      integration: new HttpLambdaIntegration('LocaleIntegration', fn),
+    });
+    const localeStage = localeApi.defaultStage?.node.defaultChild as
+      apigw.CfnStage | undefined;
+    if (localeStage)
+      localeStage.defaultRouteSettings = {
+        throttlingBurstLimit: 10,
+        throttlingRateLimit: 5,
+      };
+    distribution.addBehavior(
+      '/api/locale',
+      new origins.HttpOrigin(
+        Fn.select(2, Fn.split('/', localeApi.apiEndpoint)),
+      ),
+      {
+        viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
+        cachePolicy: cloudfront.CachePolicy.CACHING_DISABLED,
+        originRequestPolicy: new cloudfront.OriginRequestPolicy(
+          this,
+          'LocaleCountryPolicy',
+          {
+            headerBehavior: cloudfront.OriginRequestHeaderBehavior.allowList(
+              'CloudFront-Viewer-Country',
+            ),
+            cookieBehavior: cloudfront.OriginRequestCookieBehavior.none(),
+            queryStringBehavior:
+              cloudfront.OriginRequestQueryStringBehavior.none(),
+          },
+        ),
+        responseHeadersPolicy: headers,
+      },
+    );
     const stage = api.defaultStage?.node.defaultChild as
       apigw.CfnStage | undefined;
     if (stage)

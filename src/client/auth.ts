@@ -1,3 +1,5 @@
+import { readLanguage } from './language';
+
 /** Public OAuth configuration. No AWS keys or Google client secret belong here. */
 export interface RuntimeConfig {
   apiBaseUrl: string;
@@ -32,10 +34,25 @@ export const authError = () => initializationError;
 const loopbackDevelopment = () =>
   import.meta.env.DEV && ['127.0.0.1', 'localhost'].includes(location.hostname);
 export const isAuthenticated = () => !!sessionStorage.getItem(TOKEN_KEY);
-export const pendingInvitation = () =>
-  sessionStorage.getItem('brownie-invitation');
-export const clearInvitation = () =>
-  sessionStorage.removeItem('brownie-invitation');
+const INVITATION_KEY = 'brownie-invitation';
+export const INVITATION_CHANGED = 'domovoy-invitation-changed';
+export const pendingInvitation = () => {
+  const value = sessionStorage.getItem(INVITATION_KEY);
+  return value && /^[A-Za-z0-9_-]{43}$/.test(value) ? value : null;
+};
+export const clearInvitation = () => sessionStorage.removeItem(INVITATION_KEY);
+let watchingInvitation = false;
+/** Fragment navigation in an already-open tab does not reload the application. */
+export function captureInvitation(): void {
+  const invitation = new URLSearchParams((location.hash ?? '').slice(1)).get(
+    'invite',
+  );
+  if (!invitation || !/^[A-Za-z0-9_-]{43}$/.test(invitation)) return;
+  sessionStorage.setItem(INVITATION_KEY, invitation);
+  history.replaceState(null, '', location.pathname + location.search);
+  if (typeof window !== 'undefined')
+    window.dispatchEvent(new Event(INVITATION_CHANGED));
+}
 export function clearAuth() {
   authGeneration++;
   refreshPending = undefined;
@@ -220,7 +237,13 @@ async function authorizeGoogle() {
   );
   sessionStorage.setItem(
     FLOW_KEY,
-    JSON.stringify({ verifier, state, nonce, createdAt: Date.now() }),
+    JSON.stringify({
+      verifier,
+      state,
+      nonce,
+      createdAt: Date.now(),
+      invitation: pendingInvitation(),
+    }),
   );
   localStorage.setItem('domovoy-mode', 'server');
   const url = new URL('/oauth2/authorize', config.cognitoDomain);
@@ -238,6 +261,7 @@ async function authorizeGoogle() {
   location.assign(url);
 }
 export async function startGoogleLogin() {
+  captureInvitation();
   if (
     !config.cognitoDomain ||
     !config.cognitoClientId ||
@@ -265,6 +289,7 @@ export async function createAppSession() {
       deviceName: navigator.userAgent.includes('Mobile')
         ? 'Mobile browser'
         : 'Browser',
+      locale: readLanguage(),
     }),
   });
   const result = (await response.json()) as {
@@ -288,12 +313,10 @@ export async function createAppSession() {
 export async function initializeAuth() {
   initializationError = '';
   try {
-    const invitation = new URLSearchParams((location.hash ?? '').slice(1)).get(
-      'invite',
-    );
-    if (invitation && /^[A-Za-z0-9_-]{43}$/.test(invitation)) {
-      sessionStorage.setItem('brownie-invitation', invitation);
-      history.replaceState(null, '', location.pathname + location.search);
+    captureInvitation();
+    if (typeof window !== 'undefined' && !watchingInvitation) {
+      window.addEventListener('hashchange', captureInvitation);
+      watchingInvitation = true;
     }
     let value: RuntimeConfig | undefined;
     try {
@@ -365,6 +388,12 @@ export async function initializeAuth() {
       throw new Error(
         'Попытка входа истекла или не относится к этой вкладке. Начните вход заново.',
       );
+    if (
+      !pendingInvitation() &&
+      typeof flow.invitation === 'string' &&
+      /^[A-Za-z0-9_-]{43}$/.test(flow.invitation)
+    )
+      sessionStorage.setItem(INVITATION_KEY, flow.invitation);
     if (
       !config.cognitoDomain ||
       !config.cognitoClientId ||

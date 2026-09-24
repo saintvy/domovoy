@@ -585,6 +585,12 @@ export function HouseholdPreferences({
         .filter((code) => code !== state.household.currency)
         .join(', '),
     ),
+    [reportHour, setReportHour] = useState(
+      state.household.telegramReportTime?.hour ?? 9,
+    ),
+    [reportTimeZone, setReportTimeZone] = useState(
+      state.household.telegramReportTime?.timeZone ?? state.household.timezone,
+    ),
     [acknowledged, setAcknowledged] = useState(false);
   return (
     <form
@@ -611,6 +617,10 @@ export function HouseholdPreferences({
                 ],
                 timezone: String(form.get('timezone')),
                 locale: state.household.locale,
+                telegramReportTime: {
+                  hour: reportHour,
+                  timeZone: reportTimeZone,
+                },
               },
             },
           ],
@@ -713,6 +723,44 @@ export function HouseholdPreferences({
           />
         </label>
       </div>
+      <fieldset>
+        <legend>
+          {t('Ежедневный отчёт Telegram', 'Daily Telegram report')}
+        </legend>
+        <div className="form-grid">
+          <label className="field">
+            <span>{t('Местный час отправки', 'Local delivery hour')}</span>
+            <select
+              aria-label={t('Местный час отправки', 'Local delivery hour')}
+              value={reportHour}
+              onChange={(event) => setReportHour(Number(event.target.value))}
+              disabled={!isAdmin}
+            >
+              {Array.from({ length: 24 }, (_, hour) => (
+                <option value={hour} key={hour}>
+                  {String(hour).padStart(2, '0')}:00
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="field">
+            <span>{t('Часовой пояс отчёта', 'Report timezone')}</span>
+            <input
+              aria-label={t('Часовой пояс отчёта', 'Report timezone')}
+              value={reportTimeZone}
+              onChange={(event) => setReportTimeZone(event.target.value)}
+              required
+              disabled={!isAdmin}
+            />
+          </label>
+        </div>
+        <p className="muted">
+          {t(
+            'Час сохраняется по местному времени и автоматически учитывает переход на летнее время. Проверка запускается раз в час; в поясах со смещением на неполный час отчёт придёт при первом запуске после выбранного времени.',
+            'The local hour is preserved across daylight-saving changes. Reports are checked hourly; in timezones with a partial-hour offset, delivery occurs on the first run after the selected time.',
+          )}
+        </p>
+      </fieldset>
       <label className="field">
         <span>{t('Дополнительные валюты', 'Additional currencies')}</span>
         <input

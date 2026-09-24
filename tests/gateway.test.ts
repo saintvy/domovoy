@@ -3,6 +3,22 @@ import { handler } from '../src/aws/handler';
 
 afterEach(() => vi.unstubAllEnvs());
 describe('Browser preflight regression', () => {
+  it.each(['RU', 'BY', 'UA', 'CZ', 'US', undefined])(
+    'provides a public, uncached locale hint for %s without database access',
+    async (country) => {
+      const result: any = await handler({
+        version: '2.0',
+        rawPath: '/api/locale',
+        headers: country ? { 'cloudfront-viewer-country': country } : {},
+        requestContext: { http: { method: 'GET' }, requestId: 'locale' },
+      } as any);
+      expect(result.statusCode).toBe(200);
+      expect(result.headers['cache-control']).toBe('no-store');
+      expect(JSON.parse(result.body)).toEqual({
+        locale: ['RU', 'BY', 'UA'].includes(country ?? '') ? 'ru' : 'en',
+      });
+    },
+  );
   it('responds without JWT or database credentials to OPTIONS on authenticated API paths', async () => {
     vi.stubEnv('APP_ORIGIN', 'https://brownie.example');
     const result: any = await handler({

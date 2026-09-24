@@ -9,3 +9,4 @@ export * from './reporting';
 export * from './exchange-requirements';
 export * from './billing';
 export * from './lifecycle';
+export * from './telegram-reminders';

@@ -6,6 +6,115 @@
 .family-directory-person {
   padding: 20px;
 }
+.family-contact-strip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  margin-top: 12px;
+  border: 1px solid var(--border, #e0e5e2);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--surface, #fff) 88%, transparent);
+}
+.family-email-strip,
+.family-contact-summary {
+  padding: 13px 14px;
+}
+.family-telegram-details {
+  display: block;
+}
+.family-contact-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+}
+.family-contact-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.family-contact-icon {
+  width: 19px;
+  height: 19px;
+  flex: none;
+  color: var(--accent, #38665d);
+  fill: currentColor;
+}
+.family-email-strip .family-contact-icon {
+  fill: none;
+}
+.family-telegram-details .family-contact-icon,
+.family-telegram-unavailable .family-contact-icon {
+  color: #229ed9;
+}
+.family-telegram-details > summary {
+  list-style: none;
+  cursor: pointer;
+}
+.family-telegram-details > summary::-webkit-details-marker {
+  display: none;
+}
+.family-telegram-details[open] > summary {
+  border-bottom: 1px solid var(--border, #e0e5e2);
+}
+.family-contact-summary:focus-visible {
+  outline: 2px solid var(--accent, #38665d);
+  outline-offset: 3px;
+}
+.family-contact-chip {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  padding: 5px 10px;
+  border: 1px solid color-mix(in srgb, var(--accent, #38665d) 22%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent, #38665d) 9%, transparent);
+  color: var(--text, inherit);
+  font: inherit;
+  font-size: 12px;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+button.family-contact-chip {
+  cursor: pointer;
+}
+button.family-contact-chip:hover:not(:disabled) {
+  border-color: var(--accent, #38665d);
+}
+.family-contact-chip.is-linked {
+  color: var(--accent, #38665d);
+}
+.family-telegram-unavailable {
+  padding: 13px 14px;
+}
+.family-telegram-settings {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+}
+.family-telegram-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.family-telegram-schedule {
+  display: grid;
+  gap: 10px;
+}
+.family-telegram-link {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin: 0;
+}
+.family-telegram-schedule .form-grid {
+  margin: 0;
+}
 .family-person-row {
   display: flex;
   align-items: center;
@@ -52,7 +161,10 @@
 }
 .family-person-email {
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  justify-content: flex-end;
   align-items: flex-end;
   overflow-wrap: anywhere;
   min-width: 0;
@@ -64,9 +176,10 @@
 }
 .family-person-email small {
   font-size: 12px;
+  color: var(--muted, #697077);
 }
 .family-person-email.is-pending {
-  opacity: 0.58;
+  color: var(--muted, #697077);
 }
 .family-person-obligations {
   display: grid;
@@ -112,7 +225,8 @@
   box-sizing: border-box;
 }
 .family-person-name:focus-visible,
-.family-person-email button:focus-visible {
+.family-person-email button:focus-visible,
+.family-contact-chip:focus-visible {
   outline: 2px solid var(--accent, #38665d);
   outline-offset: 4px;
 }
@@ -171,8 +285,7 @@
   white-space: nowrap !important;
 }
 .family-header-probe .family-person-name,
-.family-header-probe .family-person-access,
-.family-header-probe .family-person-email {
+.family-header-probe .family-person-access {
   width: max-content !important;
   max-width: none !important;
   flex: none !important;
@@ -187,20 +300,23 @@
   min-width: 160px !important;
   max-width: 245px !important;
 }
+.family-account-settings-card {
+  padding: 24px;
+}
 @media (max-width: 760px) {
   .family-person-row {
-    align-items: flex-start;
-    flex-direction: column;
-    gap: 12px;
+    align-items: center;
+    gap: 10px;
   }
   .family-person-access {
-    width: 100%;
-    justify-content: space-between;
-    gap: 12px;
+    width: auto;
+    margin-left: auto;
+    justify-content: flex-end;
+    gap: 10px;
     flex-wrap: wrap;
   }
   .family-person-email {
-    align-items: flex-start;
+    align-items: center;
   }
   .family-person-email button {
     text-align: left;
@@ -220,6 +336,13 @@
     padding: 12px;
   }
   .family-email-dialog {
+    padding: 18px;
+  }
+  .family-contact-strip,
+  .family-contact-summary {
+    gap: 10px;
+  }
+  .family-account-settings-card {
     padding: 18px;
   }
 }

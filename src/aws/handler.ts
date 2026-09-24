@@ -40,6 +40,19 @@ export async function handler(
     // Explicit OPTIONS integration is unauthenticated; never demand a browser JWT for preflight.
     if (method === 'OPTIONS' && path.startsWith('/api/'))
       return { statusCode: 204, headers: { 'cache-control': 'no-store' } };
+    // A cosmetic country hint, never an identity or authorization signal.
+    // This route must work before credentials or a database connection exist.
+    if (method === 'GET' && path === '/api/locale')
+      return response(
+        JSON.stringify({
+          locale: ['RU', 'BY', 'UA'].includes(
+            headers['cloudfront-viewer-country'] ?? '',
+          )
+            ? 'ru'
+            : 'en',
+        }),
+        200,
+      );
     const claims = (
       request.requestContext as typeof request.requestContext & {
         authorizer?: { jwt?: { claims?: Record<string, unknown> } };

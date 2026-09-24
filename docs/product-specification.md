@@ -118,6 +118,17 @@ between families. Pending invitation roles may change without creating membershi
 Head status can only be transferred to a confirmed member by the current head;
 the admin option is listed first but disabled for an unconfirmed email.
 
+Capture invitation fragments on initial load, same-document navigation and before
+Google redirects. Retain the token only in the current tab through the complete
+logout/PKCE/callback sequence until acceptance or explicit dismissal. A pending
+invitation takes precedence over the create-family form during onboarding.
+
+Invitations contain localized plain text and light-theme HTML with green accents,
+the application logo, intended Google address and a single-use acceptance link.
+Use a known recipient's last application language, otherwise the sender's language,
+then the household locale. Freeze the language in the outbox for consistent retries;
+legacy queued messages without a language retain Russian.
+
 A new invitation for the same email/person revokes the previous one. Revoked,
 expired or already-used tokens give no access. The initial sending limit is 20
 invitations per family per day. Queuing is not delivery; retries may resend the same
@@ -272,6 +283,40 @@ segment. Backdated payments must update historical debt calculations.
 
 ## 6. Persistence and concurrency
 
+### Telegram daily reports
+
+The family chooses a default local report hour and IANA timezone. Each account
+may override the schedule in family/access settings; the head may also configure
+member schedules. Preserve the selected local hour across daylight-saving changes,
+storing the next EventBridge trigger as UTC. The hourly UTC rule runs at minute
+zero; fractional-offset zones use the next hourly boundary, disclosed in the UI.
+
+Obligations support enabled reminders, a lead of 0–365 days, and either one
+reminder per billing period or daily reminders until settlement, including overdue
+days. Existing non-automatic obligations receive daily reminders starting one day
+before the due date; existing automatic obligations have reminders disabled.
+Materialize these defaults once and preserve explicit settings.
+
+Reports list outstanding original-currency amounts and due dates in overdue,
+upcoming/due, and automatic-payment sections, retaining estimate/unknown labels.
+Only the responsible person's linked account receives a report; beneficiaries and
+automatic-payment payers do not determine its recipient. Skip accounts without a
+Telegram link and empty reports. Existing grace-day and settlement rules apply.
+
+Members link only their own private Telegram chat using an expiring one-use URL.
+Relinking replaces the active chat after successful token consumption; unlinking
+revokes pending links and invalidates queued reports. Provider requests require
+webhook authentication, and account linking must withstand replay and concurrent
+membership changes.
+
+Reports are durable logical operations, revalidated before sending. Duplicate
+events cannot concurrently send the same report. An ambiguous provider timeout is
+recorded as unknown without automatic resend; accepted and unknown one-time
+attempts suppress a second one-time reminder. Telegram reports never create
+payments or confirm a bank transaction.
+
+### Financial command transactions
+
 The financial register is one JSONB snapshot per family, with separate account,
 membership, session, invitation, operation and audit tables. The snapshot is capped
 at 4 MiB; normalization and range queries are future scaling work.
@@ -307,16 +352,34 @@ and actionable errors. Keep promotional filler out of working screens. An
 obligation's category overrides its provider category. Appearance preferences
 belong to the browser, not the financial register.
 
-| Screen      | Requirements                                                                                                                                       |
-| ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Sign-in     | Google only; no demo or user-facing infrastructure credentials                                                                                     |
-| No family   | Create a family or understand/accept an invitation                                                                                                 |
-| Overview    | Four summary metrics, two monthly charts, grouped obligations and upcoming payments                                                                |
-| Obligations | Optional responsible person, separate beneficiaries, end date, weekly recurrence, automatic schedule and icon                                      |
-| Payments    | Obligation-first entry, original/base amounts, credit and a separate schedule list                                                                 |
-| Family      | Name/color on the left, email/role on the right, admin first; one editor; pending email visually subdued; collapsible responsibility/benefit lists |
-| Reports     | Date range and two CSV reports: obligations and payments                                                                                           |
-| Settings    | Household name/shared color, currencies, locale/timezone, sessions and leaving; transfer head through a confirmed member's role                    |
+Use a saved `domovoy-language` preference first. On first use choose Russian when
+browser language preferences include Russian or the connection country is Russia,
+Belarus or Ukraine; otherwise choose English and persist that choice. Active OS
+keyboard layout is not reliably exposed by browsers, so browser/system language
+preferences are the available signal. Country lookup failure falls back to English
+without blocking login. Language selection is also available on the welcome and
+onboarding screens.
+
+Synchronize the chosen language to the authenticated account on application use
+and language changes. Household locale stays separate. Telegram uses the recipient's
+latest stored language when claiming delivery, with household locale as fallback;
+successful linking replies use that account preference as well.
+
+Member cards show identity and role first, matching framed Email and Telegram rows
+next, and benefit/responsibility lists last. Telegram details expand from the row.
+Settings use independent columns: appearance and devices on the left, household
+and framed family participation on the right; narrow screens stack the columns.
+
+| Screen      | Requirements                                                                                                                        |
+| ----------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| Sign-in     | Google only; no demo or user-facing infrastructure credentials                                                                      |
+| No family   | Create a family or understand/accept an invitation                                                                                  |
+| Overview    | Four summary metrics, two monthly charts, grouped obligations and upcoming payments                                                 |
+| Obligations | Optional responsible person, separate beneficiaries, end date, weekly recurrence, automatic schedule and icon                       |
+| Payments    | Obligation-first entry, original/base amounts, credit and a separate schedule list                                                  |
+| Family      | Identity/role header, framed Email and collapsible Telegram rows, then responsibility/benefit lists; pending email visually subdued |
+| Reports     | Date range and two CSV reports: obligations and payments                                                                            |
+| Settings    | Household name/shared color, currencies, locale/timezone, sessions and leaving; transfer head through a confirmed member's role     |
 
 Group one obligation's charges in the selected month into one row, with first/last
 dates, total amount and aggregate status. Show paid/total for partial settlement,

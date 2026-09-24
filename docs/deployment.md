@@ -97,6 +97,17 @@ set. The command does not wait for deployment completion; check stack events and
 
 ## Google and runtime configuration
 
+### Telegram rollout
+
+Telegram uses SSM Parameter Store, not Secrets Manager. Follow the migration,
+parameter provisioning and activation sequence in
+[Telegram reminders](telegram-reminders.md). `telegramRemindersEnabled` defaults
+to false so a stack update cannot start the hourly report schedule before the
+new SQL tables and parameters exist. The public worker receives parameter names,
+never the bot token in its environment or CloudFormation template.
+
+### Google configuration
+
 Configure Google as the only Cognito identity provider. The Google web client's
 authorized redirect is the Cognito `/oauth2/idpresponse` URL. Use distinct public
 Cognito app clients for the hosted origin and localhost, with authorization code

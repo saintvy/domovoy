@@ -718,10 +718,22 @@ export function initializeDefaults(s: State): void {
   s.automaticPayments ??= [];
   s.automaticPaymentRuns ??= [];
   s.household.currencies ??= [s.household.currency];
+  s.household.telegramReportTime ??= {
+    hour: 9,
+    timeZone: s.household.timezone,
+  };
   s.household.color ??= DEFAULT_HOUSEHOLD_COLOR;
   for (const [index, person] of s.people.entries())
     person.color ??= personColors[index % personColors.length];
-  for (const obligation of s.obligations)
+  for (const obligation of s.obligations) {
+    obligation.reminder ??= {
+      enabled: !s.automaticPayments!.some(
+        (schedule) =>
+          schedule.obligationId === obligation.id && schedule.enabled,
+      ),
+      daysBefore: 1,
+      repeat: 'daily',
+    };
     if (!obligation.beneficiaries) {
       const ids = [
         ...new Set(
@@ -739,6 +751,7 @@ export function initializeDefaults(s: State): void {
           ? { kind: 'household' }
           : { kind: 'people', personIds: ids };
     }
+  }
   for (const payment of s.payments)
     if (
       payment.baseAmount === undefined &&

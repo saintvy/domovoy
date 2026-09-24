@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+test.use({ locale: 'en-US' });
 test('production shell opens offline without cached financial or authentication responses', async ({
   page,
   context,
@@ -7,7 +8,7 @@ test('production shell opens offline without cached financial or authentication 
   page.on('pageerror', (error) => errors.push(error.message));
   await page.goto('/');
   await expect(
-    page.getByRole('button', { name: 'Продолжить с Google', exact: true }),
+    page.getByRole('button', { name: 'Continue with Google', exact: true }),
   ).toBeVisible();
   await page.evaluate(() => navigator.serviceWorker.ready.then(() => true));
   await expect
@@ -51,10 +52,10 @@ test('production shell opens offline without cached financial or authentication 
   await context.setOffline(true);
   await page.reload();
   await expect(
-    page.getByRole('button', { name: 'Продолжить с Google', exact: true }),
+    page.getByRole('button', { name: 'Continue with Google', exact: true }),
   ).toBeVisible();
   await expect(
-    page.getByRole('heading', { name: 'Всё под контролем.' }),
+    page.getByRole('heading', { name: 'Everything under control.' }),
   ).toHaveCount(0);
   expect(
     await page.evaluate(() =>

@@ -69,7 +69,7 @@ jobs:
           cache: npm
       - run: npm ci
       - run: node scripts/dev-db.mjs up
-      - run: npx vitest run tests/local-development.test.ts
+      - run: npx vitest run tests/local-development.test.ts tests/telegram-postgres.test.ts --maxWorkers=1
         env:
           BROWNIE_TEST_DOCKER: '1'
       - run: node scripts/dev-db.mjs down
