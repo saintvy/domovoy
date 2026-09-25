@@ -6,6 +6,7 @@ import {
   effectiveReminderSettings,
   householdToday,
   isISODate,
+  NOBODY_PERSON_ID,
   requiredExchangeRates,
   type Command,
   type ExchangeRate,
@@ -58,6 +59,19 @@ export interface FamilyServices extends TelegramReportPublisher {
 }
 const roles = ['editor', 'own_editor', 'deleter', 'observer'];
 const editing = new Set(['admin', 'editor', 'own_editor', 'deleter']);
+const memberLifecycleCommands = new Set([
+  'DeletePerson',
+  'ArchivePerson',
+  'RestorePerson',
+]);
+type MemberLifecycleCommand = Extract<
+  Command,
+  { type: 'DeletePerson' | 'ArchivePerson' | 'RestorePerson' }
+>;
+const isMemberLifecycleCommand = (
+  command: Command,
+): command is MemberLifecycleCommand =>
+  memberLifecycleCommands.has(command.type);
 const normalize = (state: State): State => ({
   ...state,
   automaticPayments: state.automaticPayments ?? [],
@@ -817,6 +831,47 @@ export class FamilyApplication {
     check(body.expectedRevision === f.state.revision, 'REVISION_CONFLICT', 409);
     const before = normalize(f.state),
       overrides = await manualRates(c, f.id);
+    const lifecycleCommand = (body.commands as Command[]).find(
+      isMemberLifecycleCommand,
+    );
+    let targetMembership: any;
+    if (lifecycleCommand) {
+      // Membership removal has security side effects, so keep it as one logical
+      // operation and prevent a later command in the batch from restoring or
+      // otherwise changing the same person after access was revoked.
+      check(body.commands.length === 1, 'VALIDATION_FAILED');
+      check(user.role === 'admin', 'FORBIDDEN', 403);
+      if (
+        lifecycleCommand.type === 'ArchivePerson' ||
+        lifecycleCommand.type === 'RestorePerson'
+      )
+        check(
+          lifecycleCommand.payload?.expectedDate ===
+            householdToday(before, new Date(this.now())),
+          'MEMBER_PREVIEW_EXPIRED',
+          409,
+        );
+      const personId = lifecycleCommand.payload?.personId;
+      check(
+        typeof personId === 'string' &&
+          personId !== NOBODY_PERSON_ID &&
+          before.people.some((person) => person.id === personId),
+        'VALIDATION_FAILED',
+      );
+      targetMembership = (
+        await c.query(
+          'SELECT subject FROM brownie_memberships WHERE family_id=$1 AND person_id=$2',
+          [f.id, personId],
+        )
+      ).rows[0];
+      check(
+        !targetMembership ||
+          (targetMembership.subject !== f.head_subject &&
+            targetMembership.subject !== user.id),
+        'HEAD_TRANSFER_REQUIRED',
+        409,
+      );
+    }
     // Freeze compatibility defaults before a command can add/remove an automatic
     // schedule. Otherwise the same legacy obligation would silently change its
     // reminder policy as a side effect of that schedule edit.
@@ -858,6 +913,30 @@ export class FamilyApplication {
       JSON.stringify(after),
       f.id,
     ]);
+    if (
+      lifecycleCommand &&
+      ['DeletePerson', 'ArchivePerson'].includes(lifecycleCommand.type)
+    ) {
+      const personId = lifecycleCommand.payload.personId;
+      // Do not lock the target account here: requests lock their own account
+      // before the family, and reversing that order would allow a deadlock.
+      // Removing membership cascades Telegram links, link tokens, report jobs,
+      // and one-time receipts. Sessions and invitations intentionally retain
+      // their audit rows, but can no longer grant access.
+      if (targetMembership)
+        await c.query(
+          'UPDATE brownie_family_sessions SET revoked_at=$1 WHERE family_id=$2 AND subject=$3 AND revoked_at IS NULL',
+          [this.now(), f.id, targetMembership.subject],
+        );
+      await c.query(
+        'UPDATE brownie_invitations SET revoked_at=$1 WHERE family_id=$2 AND person_id=$3 AND accepted_at IS NULL AND revoked_at IS NULL',
+        [this.now(), f.id, personId],
+      );
+      await c.query(
+        'DELETE FROM brownie_memberships WHERE family_id=$1 AND person_id=$2',
+        [f.id, personId],
+      );
+    }
     if (
       JSON.stringify(familyReportTime(before)) !==
       JSON.stringify(familyReportTime(after))
@@ -1009,6 +1088,15 @@ export class FamilyApplication {
       fresh.accepted_at === null &&
         fresh.revoked_at === null &&
         Number(fresh.expires_at) > this.now(),
+      'INVITATION_EXPIRED',
+      410,
+    );
+    check(
+      fresh.person_id !== NOBODY_PERSON_ID &&
+        family.state.people.some(
+          (person: any) =>
+            person.id === fresh.person_id && person.archivedAt === undefined,
+        ),
       'INVITATION_EXPIRED',
       410,
     );

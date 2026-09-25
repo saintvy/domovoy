@@ -73,6 +73,23 @@ const beneficiaries = z.discriminatedUnion('kind', [
     })
     .strict(),
 ]);
+const attribution = z
+  .object({
+    through: date,
+    ownerPersonId: id.optional(),
+    beneficiaries,
+  })
+  .strict();
+const beneficiaryArchive = z
+  .object({
+    personIds: z
+      .array(id)
+      .min(1)
+      .max(1000)
+      .refine((ids) => new Set(ids).size === ids.length),
+    hadNobody: z.boolean(),
+  })
+  .strict();
 const person = z
   .object({
     id,
@@ -98,6 +115,8 @@ const obligation = z
     coverageMode: z.enum(['single_account', 'multi_account', 'household']),
     ownerPersonId: id.optional(),
     beneficiaries: beneficiaries.optional(),
+    attributionHistory: z.array(attribution).max(1000).optional(),
+    beneficiaryArchive: beneficiaryArchive.optional(),
     iconId: z.string().max(80).optional(),
     iconColor: color.optional(),
     createdByUserId: text.optional(),
@@ -251,6 +270,7 @@ const automaticRun = z
 const householdFields = {
   name: text,
   color: color.optional(),
+  nobodyColor: color.optional(),
   currency,
   currencies: z
     .array(currency)
@@ -278,7 +298,7 @@ const paymentPolicy = z.enum(['delete', 'move_inside', 'keep_credit']);
 const c = <T extends string, S extends z.ZodTypeAny>(type: T, payload: S) =>
   z.object({ type: z.literal(type), payload }).strict();
 export const commandSchema = z.discriminatedUnion('type', [
-  c('AddPerson', person),
+  c('AddPerson', person.omit({ archivedAt: true })),
   c(
     'UpdatePerson',
     z
@@ -287,6 +307,27 @@ export const commandSchema = z.discriminatedUnion('type', [
         patch: z
           .object({ displayName: text.optional(), color: color.optional() })
           .strict(),
+      })
+      .strict(),
+  ),
+  c('DeletePerson', z.object({ personId: id }).strict()),
+  c(
+    'ArchivePerson',
+    z
+      .object({
+        personId: id,
+        soleBeneficiaryPolicy: z.enum(['keep_nobody', 'end_at_last_accrual']),
+        expectedDate: date.optional(),
+      })
+      .strict(),
+  ),
+  c(
+    'RestorePerson',
+    z
+      .object({
+        personId: id,
+        restoreBeneficiaries: z.boolean(),
+        expectedDate: date.optional(),
       })
       .strict(),
   ),
@@ -336,7 +377,11 @@ export const commandSchema = z.discriminatedUnion('type', [
     'AddObligation',
     z
       .object({
-        obligation: obligation.omit({ createdByUserId: true }),
+        obligation: obligation.omit({
+          createdByUserId: true,
+          attributionHistory: true,
+          beneficiaryArchive: true,
+        }),
         provider,
         rule,
         accounts: z.array(account).optional(),

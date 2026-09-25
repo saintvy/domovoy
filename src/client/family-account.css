@@ -346,3 +346,8 @@ button.family-contact-chip:hover:not(:disabled) {
     padding: 18px;
   }
 }
+
+.family-archive-link {
+  font-size: 0.8rem;
+  margin-top: 1rem;
+}

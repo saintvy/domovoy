@@ -1,5 +1,10 @@
 import { test, expect, type Page } from '@playwright/test';
-import { applyCommands, createDemoState, type Command } from '../src/domain';
+import {
+  applyCommands,
+  createDemoState,
+  NOBODY_PERSON_ID,
+  type Command,
+} from '../src/domain';
 
 /** Isolated UI fixture: production/development still require actual Google authentication. */
 async function household(page: Page, role: 'admin' | 'observer' = 'admin') {
@@ -220,7 +225,7 @@ test('obligation supports optional owner, individual beneficiaries, expiry and s
   const command = fixture.commands
     .flat()
     .find((command) => command.type === 'AddObligation');
-  expect(command?.payload.obligation.ownerPersonId).toBeUndefined();
+  expect(command?.payload.obligation.ownerPersonId).toBe(NOBODY_PERSON_ID);
   expect(command?.payload.obligation.beneficiaries).toEqual({
     kind: 'people',
     personIds: [fixture.read().people[0].id],

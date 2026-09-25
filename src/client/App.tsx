@@ -22,6 +22,7 @@ import {
   AutomaticPaymentsPanel,
   HouseholdPreferences,
   beneficiaryLabel,
+  personLabel,
   beneficiaryPresentation,
 } from './ProductPanels';
 import {
@@ -30,7 +31,11 @@ import {
   PaymentEditor,
   AutomaticPaymentEditor,
 } from './ProductForms';
-import { periodBaseAmount, paymentBaseAmount } from '../domain';
+import {
+  periodBaseAmount,
+  paymentBaseAmount,
+  personAttributionForDate,
+} from '../domain';
 import { GoogleLogin } from './GoogleLogin';
 import {
   authError as initialAuthError,
@@ -575,7 +580,14 @@ export default function App() {
   }, [page, user]);
   function handleError(e: unknown) {
     const err = e as ApiError;
-    setError(err.message);
+    setError(
+      err.code === 'MEMBER_PREVIEW_EXPIRED'
+        ? t(
+            'Дата предпросмотра изменилась. Закройте это окно и подтвердите действие заново. Старый черновик можно удалить.',
+            'The preview date has changed. Close this dialog and confirm the action again. You can discard the old draft.',
+          )
+        : err.message,
+    );
     if (['SESSION_REVOKED', 'AUTH_REQUIRED'].includes(err.code)) {
       clearAuth();
       setState(null);
@@ -1484,7 +1496,12 @@ export default function App() {
                     {filtered.map((row) => {
                       const p = row.representative,
                         o = row.obligation,
-                        beneficiary = beneficiaryPresentation(state!, o, t),
+                        beneficiary = beneficiaryPresentation(
+                          state!,
+                          o,
+                          t,
+                          row.representative.dueDate,
+                        ),
                         first = row.periods[0],
                         last = row.periods.at(-1)!,
                         multiple = row.periods.length > 1,
@@ -1526,13 +1543,14 @@ export default function App() {
                                   t,
                                 )}
                                 <span className="small-separator">·</span>
-                                {state?.people.find(
-                                  (person) => person.id === o.ownerPersonId,
-                                )?.displayName ||
-                                  t(
-                                    'Ответственный не назначен',
-                                    'No responsible person',
-                                  )}
+                                {personLabel(
+                                  state!,
+                                  personAttributionForDate(
+                                    o,
+                                    row.representative.dueDate,
+                                  ).ownerPersonId,
+                                  t,
+                                )}
                               </small>
                               <small className="obligation-beneficiaries">
                                 <span>{t('Пользуется', 'Benefits')}:</span>{' '}
@@ -1784,12 +1802,7 @@ export default function App() {
                         </strong>
                         <small>
                           {date(payment.paidAt)} ·{' '}
-                          {
-                            state?.people.find(
-                              (p) => p.id === payment.payerPersonId,
-                            )?.displayName
-                          }{' '}
-                          ·{' '}
+                          {personLabel(state!, payment.payerPersonId, t)} ·{' '}
                           {payment.source === 'csv'
                             ? 'CSV'
                             : payment.source === 'automatic'
@@ -1842,6 +1855,7 @@ export default function App() {
                 user={user!}
                 t={t}
                 onChange={refresh}
+                onLifecycle={submit}
                 onSavePerson={(personId, patch) =>
                   submit(
                     [{ type: 'UpdatePerson', payload: { personId, patch } }],
@@ -1893,6 +1907,18 @@ export default function App() {
                               'Payment recorded',
                             ),
                             AddPerson: t('Добавлен член семьи', 'Person added'),
+                            ArchivePerson: t(
+                              'Участник помещён в архив',
+                              'Member archived',
+                            ),
+                            DeletePerson: t(
+                              'Участник удалён полностью',
+                              'Member permanently deleted',
+                            ),
+                            RestorePerson: t(
+                              'Участник возвращён из архива',
+                              'Member restored',
+                            ),
                             GeneratePeriods: t(
                               'Созданы начисления',
                               'Billing periods generated',
@@ -2733,8 +2759,13 @@ function ModalContent(p: ModalProps) {
           <span>
             <small>{t('Ответственный', 'Owner')}</small>
             <strong>
-              {state.people.find((v) => v.id === o.ownerPersonId)
-                ?.displayName ?? t('Не назначен', 'Not assigned')}
+              {personLabel(
+                state,
+                period
+                  ? personAttributionForDate(o, period.dueDate).ownerPersonId
+                  : o.ownerPersonId,
+                t,
+              )}
             </strong>
           </span>
           <span>
@@ -2761,7 +2792,7 @@ function ModalContent(p: ModalProps) {
           </span>
           <span>
             <small>{t('Кто пользуется', 'Beneficiaries')}</small>
-            <strong>{beneficiaryLabel(state, o, t)}</strong>
+            <strong>{beneficiaryLabel(state, o, t, period?.dueDate)}</strong>
           </span>
         </div>
         {period && (
@@ -2774,10 +2805,7 @@ function ModalContent(p: ModalProps) {
                   <CheckCheck size={18} />
                   <span className="grow">
                     {pay ? date(pay.paidAt) : ''} ·{' '}
-                    {
-                      state.people.find((v) => v.id === pay?.payerPersonId)
-                        ?.displayName
-                    }
+                    {personLabel(state, pay?.payerPersonId, t)}
                   </span>
                   <strong>{money(a.amount)}</strong>
                 </div>
@@ -3198,6 +3226,17 @@ function ModalContent(p: ModalProps) {
                 >
                   {t('Проверить статус', 'Check status')}
                 </button>
+              ) : d.commands.some((command) =>
+                  ['ArchivePerson', 'RestorePerson', 'DeletePerson'].includes(
+                    command.type,
+                  ),
+                ) ? (
+                <p className="notice">
+                  {t(
+                    'Для удаления, архивации или восстановления откройте участника в разделе семьи и подтвердите актуальные последствия заново. Этот черновик можно удалить.',
+                    'To delete, archive or restore a member, open them in the family view and confirm the current effects again. You can discard this draft.',
+                  )}
+                </p>
               ) : (
                 <button
                   className="button primary"

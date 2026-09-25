@@ -7,6 +7,11 @@ import {
 } from './currency';
 import { ensure, isISODate } from './validation';
 import { moneyInputValue } from './import-export';
+import {
+  DEFAULT_NOBODY_COLOR,
+  NOBODY_PERSON_ID,
+  personAttributionForDate,
+} from './lifecycle';
 
 export interface MonthlyFinancialPoint {
   month: string;
@@ -125,6 +130,12 @@ export function monthlyFinancialSeries(
         color: person.color ?? '#3B82F6',
         amount: 0,
       })),
+      {
+        key: NOBODY_PERSON_ID,
+        label: state.household.locale === 'en' ? 'Nobody' : 'Никто',
+        color: state.household.nobodyColor ?? DEFAULT_NOBODY_COLOR,
+        amount: 0,
+      },
     ];
     const buckets = new Map(
       byBeneficiary.map((bucket) => [bucket.key, bucket]),
@@ -140,9 +151,11 @@ export function monthlyFinancialSeries(
       ) {
         if (amount === undefined) unconvertedCount++;
         else {
-          const beneficiaries = obligations.get(
-            period.obligationId,
-          )?.beneficiaries;
+          const obligation = obligations.get(period.obligationId),
+            beneficiaries = obligation
+              ? personAttributionForDate(obligation, period.dueDate)
+                  .beneficiaries
+              : undefined;
           const key =
             beneficiaries?.kind === 'people' &&
             beneficiaries.personIds.length === 1
@@ -208,6 +221,10 @@ export function exportPeriodCsv(
     ),
     rules = new Map(state.rules.map((rule) => [rule.id, rule]));
   const allocated = allocationsAsOf(state, range.toInclusive);
+  people.set(
+    NOBODY_PERSON_ID,
+    state.household.locale === 'en' ? 'Nobody' : 'Никто',
+  );
   const obligationsCsv = csv([
     [
       'obligation',
@@ -244,7 +261,10 @@ export function exportPeriodCsv(
             range.toInclusive,
             allocated,
           );
-        const beneficiaries = obligation?.beneficiaries;
+        const attribution = obligation
+            ? personAttributionForDate(obligation, period.dueDate)
+            : undefined,
+          beneficiaries = attribution?.beneficiaries;
         return [
           obligation?.title ?? period.obligationId,
           beneficiaries?.kind === 'people'
@@ -252,7 +272,7 @@ export function exportPeriodCsv(
                 .map((id) => people.get(id) ?? id)
                 .join(', ')
             : 'Household',
-          people.get(obligation?.ownerPersonId ?? '') ?? '',
+          people.get(attribution?.ownerPersonId ?? '') ?? '',
           period.periodStart,
           period.periodEnd,
           period.dueDate,

@@ -13,6 +13,7 @@ export interface Household {
   id: string;
   name: string;
   color?: string;
+  nobodyColor?: string;
   currency: string;
   currencies?: string[];
   timezone: string;
@@ -27,6 +28,15 @@ export interface Person {
 }
 export type Beneficiaries =
   { kind: 'household' } | { kind: 'people'; personIds: string[] };
+export interface ObligationAttribution {
+  through: ISODate;
+  ownerPersonId?: string;
+  beneficiaries: Beneficiaries;
+}
+export interface BeneficiaryArchive {
+  personIds: string[];
+  hadNobody: boolean;
+}
 export interface Provider {
   id: string;
   name: string;
@@ -41,6 +51,8 @@ export interface Obligation {
   coverageMode: 'single_account' | 'multi_account' | 'household';
   ownerPersonId?: string;
   beneficiaries?: Beneficiaries;
+  attributionHistory?: ObligationAttribution[];
+  beneficiaryArchive?: BeneficiaryArchive;
   iconId?: string;
   iconColor?: string;
   createdByUserId?: string;
@@ -206,6 +218,23 @@ export type Command =
         patch: Partial<Pick<Person, 'displayName' | 'color'>>;
       };
     }
+  | { type: 'DeletePerson'; payload: { personId: string } }
+  | {
+      type: 'ArchivePerson';
+      payload: {
+        personId: string;
+        soleBeneficiaryPolicy: 'keep_nobody' | 'end_at_last_accrual';
+        expectedDate?: ISODate;
+      };
+    }
+  | {
+      type: 'RestorePerson';
+      payload: {
+        personId: string;
+        restoreBeneficiaries: boolean;
+        expectedDate?: ISODate;
+      };
+    }
   | {
       type: 'UpdateObligation';
       payload: {
@@ -282,6 +311,7 @@ export type Command =
           Household,
           | 'name'
           | 'color'
+          | 'nobodyColor'
           | 'currency'
           | 'currencies'
           | 'timezone'

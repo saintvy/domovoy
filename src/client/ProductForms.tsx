@@ -7,6 +7,7 @@ import {
   type ReactElement,
 } from 'react';
 import {
+  NOBODY_PERSON_ID,
   parseMoney,
   moneyInputValue,
   effectiveReminderSettings,
@@ -90,6 +91,7 @@ export function ObligationEditor({
     [picker, setPicker] = useState(false),
     [limited, setLimited] = useState(!!obligation?.activeTo),
     [auto, setAuto] = useState(false),
+    [beneficiariesTouched, setBeneficiariesTouched] = useState(false),
     [all, setAll] = useState(
       !obligation?.beneficiaries ||
         obligation.beneficiaries.kind === 'household',
@@ -100,7 +102,11 @@ export function ObligationEditor({
         : [],
     ),
     [currency, setCurrency] = useState(state.household.currency),
-    [owner, setOwner] = useState(obligation?.ownerPersonId ?? ''),
+    [owner, setOwner] = useState(
+      obligation?.ownerPersonId === NOBODY_PERSON_ID
+        ? ''
+        : (obligation?.ownerPersonId ?? ''),
+    ),
     [reminderEnabled, setReminderEnabled] = useState(
       obligation ? effectiveReminderSettings(state, obligation).enabled : true,
     ),
@@ -118,20 +124,18 @@ export function ObligationEditor({
     setError('');
     try {
       const data = new FormData(event.currentTarget);
-      if (!all && !beneficiaries.length)
-        throw new Error(
-          t(
-            'Выберите хотя бы одного получателя пользы.',
-            'Choose at least one beneficiary.',
-          ),
-        );
       const shared = {
         title: String(data.get('title')),
         category: String(data.get('category')),
-        ownerPersonId: owner || undefined,
+        ownerPersonId: owner || NOBODY_PERSON_ID,
         beneficiaries: all
           ? { kind: 'household' as const }
-          : { kind: 'people' as const, personIds: beneficiaries },
+          : {
+              kind: 'people' as const,
+              personIds: beneficiaries.length
+                ? beneficiaries
+                : [NOBODY_PERSON_ID],
+            },
         iconId: icon,
         iconColor,
         reminder: {
@@ -141,6 +145,7 @@ export function ObligationEditor({
         },
       };
       if (obligation) {
+        const { beneficiaries: selectedBeneficiaries, ...otherFields } = shared;
         void submit(
           [
             {
@@ -148,8 +153,11 @@ export function ObligationEditor({
               payload: {
                 obligationId: obligation.id,
                 patch: {
-                  ...shared,
-                  ownerPersonId: owner || null,
+                  ...otherFields,
+                  ...(beneficiariesTouched
+                    ? { beneficiaries: selectedBeneficiaries }
+                    : {}),
+                  ownerPersonId: owner || NOBODY_PERSON_ID,
                 },
               },
             },
@@ -314,12 +322,14 @@ export function ObligationEditor({
         {field(
           t('Ответственный — необязательно', 'Responsible person — optional'),
           <select value={owner} onChange={(e) => setOwner(e.target.value)}>
-            <option value="">{t('Не назначен', 'Unassigned')}</option>
-            {state.people.map((person) => (
-              <option key={person.id} value={person.id}>
-                {person.displayName}
-              </option>
-            ))}
+            <option value="">{t('Никто', 'Nobody')}</option>
+            {state.people
+              .filter((person) => !person.archivedAt)
+              .map((person) => (
+                <option key={person.id} value={person.id}>
+                  {person.displayName}
+                </option>
+              ))}
           </select>,
         )}
         <fieldset>
@@ -328,30 +338,72 @@ export function ObligationEditor({
             <input
               type="checkbox"
               checked={all}
-              onChange={(e) => setAll(e.target.checked)}
+              onChange={(e) => {
+                setAll(e.target.checked);
+                setBeneficiariesTouched(true);
+              }}
             />
             {t('Вся семья', 'Whole family')}
           </label>
           {!all && (
             <div className="beneficiary-options">
-              {state.people.map((person) => (
-                <label key={person.id}>
-                  <input
-                    type="checkbox"
-                    checked={beneficiaries.includes(person.id)}
-                    onChange={(e) =>
-                      setBeneficiaries((previous) =>
-                        e.target.checked
-                          ? [...previous, person.id]
-                          : previous.filter((value) => value !== person.id),
-                      )
-                    }
-                  />
-                  {person.displayName}
-                </label>
-              ))}
+              {beneficiaries.includes(NOBODY_PERSON_ID) &&
+                beneficiaries.length > 1 && (
+                  <label>
+                    <input
+                      type="checkbox"
+                      checked
+                      onChange={() => {
+                        setBeneficiariesTouched(true);
+                        setBeneficiaries((previous) =>
+                          previous.filter(
+                            (value) => value !== NOBODY_PERSON_ID,
+                          ),
+                        );
+                      }}
+                    />
+                    {t('Никто', 'Nobody')}
+                  </label>
+                )}
+              {state.people
+                .filter((person) => !person.archivedAt)
+                .map((person) => (
+                  <label key={person.id}>
+                    <input
+                      type="checkbox"
+                      checked={beneficiaries.includes(person.id)}
+                      onChange={(e) => {
+                        setBeneficiariesTouched(true);
+                        setBeneficiaries((previous) =>
+                          e.target.checked
+                            ? [
+                                ...previous.filter(
+                                  (value) =>
+                                    value !== NOBODY_PERSON_ID ||
+                                    previous.length > 1,
+                                ),
+                                person.id,
+                              ]
+                            : previous.filter((value) => value !== person.id),
+                        );
+                      }}
+                    />
+                    {person.displayName}
+                  </label>
+                ))}
             </div>
           )}
+          {!all &&
+            (!beneficiaries.length ||
+              (beneficiaries.length === 1 &&
+                beneficiaries[0] === NOBODY_PERSON_ID)) && (
+              <p className="muted">
+                {t(
+                  'Никто не выбран — бенефициар «Никто».',
+                  'No one selected — the beneficiary is Nobody.',
+                )}
+              </p>
+            )}
         </fieldset>
         {!obligation && (
           <>
@@ -547,11 +599,16 @@ export function ObligationEditor({
                     <option value="">
                       {t('Выберите человека', 'Select a person')}
                     </option>
-                    {state.people.map((person) => (
-                      <option key={person.id} value={person.id}>
-                        {person.displayName}
-                      </option>
-                    ))}
+                    <option value={NOBODY_PERSON_ID}>
+                      {t('Никто', 'Nobody')}
+                    </option>
+                    {state.people
+                      .filter((person) => !person.archivedAt)
+                      .map((person) => (
+                        <option key={person.id} value={person.id}>
+                          {person.displayName}
+                        </option>
+                      ))}
                   </select>,
                 )}
                 <p className="payment-currency-note">
@@ -823,11 +880,14 @@ export function PaymentEditor({
             <option value="">
               {t('Выберите человека', 'Select a person')}
             </option>
-            {state.people.map((person) => (
-              <option value={person.id} key={person.id}>
-                {person.displayName}
-              </option>
-            ))}
+            <option value={NOBODY_PERSON_ID}>{t('Никто', 'Nobody')}</option>
+            {state.people
+              .filter((person) => !person.archivedAt)
+              .map((person) => (
+                <option value={person.id} key={person.id}>
+                  {person.displayName}
+                </option>
+              ))}
           </select>,
         )}
         {currency !== state.household.currency && (
@@ -956,11 +1016,14 @@ export function AutomaticPaymentEditor({
             <option value="">
               {t('Выберите человека', 'Select a person')}
             </option>
-            {state.people.map((person) => (
-              <option key={person.id} value={person.id}>
-                {person.displayName}
-              </option>
-            ))}
+            <option value={NOBODY_PERSON_ID}>{t('Никто', 'Nobody')}</option>
+            {state.people
+              .filter((person) => !person.archivedAt)
+              .map((person) => (
+                <option key={person.id} value={person.id}>
+                  {person.displayName}
+                </option>
+              ))}
           </select>,
         )}
         <div className="form-grid">

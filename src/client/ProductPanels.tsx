@@ -3,6 +3,9 @@ import { ChevronDown, Download, Pencil, Plus, Trash2 } from 'lucide-react';
 import {
   addMonths,
   DEFAULT_HOUSEHOLD_COLOR,
+  DEFAULT_NOBODY_COLOR,
+  NOBODY_PERSON_ID,
+  personAttributionForDate,
   exportPeriodCsv,
   formatMoney,
   monthlyFinancialSeries,
@@ -18,28 +21,38 @@ export type Translate = (ru: string, en: string) => string;
 export const availableCurrencies = (state: State) => [
   ...new Set([state.household.currency, ...(state.household.currencies ?? [])]),
 ];
+export function personLabel(
+  state: State,
+  id: string | undefined,
+  t: Translate,
+) {
+  return id === NOBODY_PERSON_ID || !id
+    ? t('Никто', 'Nobody')
+    : (state.people.find((person) => person.id === id)?.displayName ?? id);
+}
 export function beneficiaryLabel(
   state: State,
   obligation: Obligation,
   t: Translate,
+  dueDate?: string,
 ) {
-  const beneficiaries = obligation.beneficiaries;
+  const beneficiaries = dueDate
+    ? personAttributionForDate(obligation, dueDate).beneficiaries
+    : obligation.beneficiaries;
   return !beneficiaries || beneficiaries.kind === 'household'
     ? t('Вся семья', 'Whole family')
-    : beneficiaries.personIds
-        .map(
-          (id) =>
-            state.people.find((person) => person.id === id)?.displayName ?? id,
-        )
-        .join(', ');
+    : beneficiaries.personIds.map((id) => personLabel(state, id, t)).join(', ');
 }
 
 export function beneficiaryPresentation(
   state: State,
   obligation: Obligation,
   t: Translate,
+  dueDate?: string,
 ) {
-  const beneficiaries = obligation.beneficiaries;
+  const beneficiaries = dueDate
+    ? personAttributionForDate(obligation, dueDate).beneficiaries
+    : obligation.beneficiaries;
   if (
     beneficiaries?.kind === 'people' &&
     beneficiaries.personIds.length === 1
@@ -48,12 +61,15 @@ export function beneficiaryPresentation(
       (candidate) => candidate.id === beneficiaries.personIds[0],
     );
     return {
-      label: person?.displayName ?? beneficiaries.personIds[0],
-      color: person?.color ?? '#3B82F6',
+      label: personLabel(state, beneficiaries.personIds[0], t),
+      color:
+        beneficiaries.personIds[0] === NOBODY_PERSON_ID
+          ? (state.household.nobodyColor ?? DEFAULT_NOBODY_COLOR)
+          : (person?.color ?? '#3B82F6'),
     };
   }
   return {
-    label: beneficiaryLabel(state, obligation, t),
+    label: beneficiaryLabel(state, obligation, t, dueDate),
     color: state.household.color ?? DEFAULT_HOUSEHOLD_COLOR,
   };
 }
@@ -524,12 +540,8 @@ export function AutomaticPaymentsPanel({
                 }
               </strong>
               <small>
-                {
-                  state.people.find(
-                    (person) => person.id === schedule.payerPersonId,
-                  )?.displayName
-                }{' '}
-                · {schedule.startDate}
+                {personLabel(state, schedule.payerPersonId, t)} ·{' '}
+                {schedule.startDate}
                 {schedule.endDate ? ` — ${schedule.endDate}` : ''} ·{' '}
                 {schedule.amount !== undefined
                   ? formatMoney(
@@ -580,6 +592,9 @@ export function HouseholdPreferences({
     [householdColor, setHouseholdColor] = useState(
       state.household.color ?? DEFAULT_HOUSEHOLD_COLOR,
     ),
+    [nobodyColor, setNobodyColor] = useState(
+      state.household.nobodyColor ?? DEFAULT_NOBODY_COLOR,
+    ),
     [additional, setAdditional] = useState(
       (state.household.currencies ?? [])
         .filter((code) => code !== state.household.currency)
@@ -604,6 +619,7 @@ export function HouseholdPreferences({
               payload: {
                 name: String(form.get('name')),
                 color: householdColor,
+                nobodyColor,
                 currency,
                 currencies: [
                   ...new Set([
@@ -679,6 +695,26 @@ export function HouseholdPreferences({
             </div>
           </details>
         </div>
+      </div>
+      <div className="form-grid">
+        <label className="field">
+          <span>{t('Цвет «Никто»', 'Nobody colour')}</span>
+          <input
+            type="color"
+            aria-label={t('Цвет «Никто»', 'Nobody colour')}
+            value={nobodyColor}
+            disabled={!isAdmin || busy}
+            onChange={(event) => setNobodyColor(event.target.value)}
+          />
+        </label>
+        <button
+          type="button"
+          className="button secondary"
+          disabled={!isAdmin || busy}
+          onClick={() => setNobodyColor(DEFAULT_NOBODY_COLOR)}
+        >
+          {t('Цвет «Никто» по умолчанию', 'Default Nobody colour')}
+        </button>
       </div>
       <div className="form-grid">
         <label className="field">

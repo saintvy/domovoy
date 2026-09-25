@@ -24,8 +24,13 @@ import {
 import { installBillingRuleChange, previewBillingRuleChange } from './billing';
 import {
   applyObligationSchedule,
+  archivePerson,
   archiveSchedulePayload,
+  DEFAULT_NOBODY_COLOR,
+  deletePerson,
   deleteObligation,
+  NOBODY_PERSON_ID,
+  restorePerson,
 } from './lifecycle';
 
 /** Stable UUID-shaped identifier for derived entities, never an authentication secret. */
@@ -391,18 +396,43 @@ export function validateState(input: unknown): State {
       (r) => r.obligationId,
     ),
     periodsByObligation = groupBy(s.periods, (p) => p.obligationId);
+  ensure(
+    !people.has(NOBODY_PERSON_ID),
+    'RESERVED_PERSON_ID',
+    'Зарезервированный участник Никто не хранится в списке семьи',
+  );
+  const knownPerson = (personId: string) =>
+    personId === NOBODY_PERSON_ID || people.has(personId);
   for (const o of s.obligations) {
     ensure(
       providers.has(o.providerId) &&
-        (!o.ownerPersonId || people.has(o.ownerPersonId)),
+        (!o.ownerPersonId || knownPerson(o.ownerPersonId)),
       'BROKEN_REFERENCE',
       'Поставщик или ответственный не найден',
     );
     if (o.beneficiaries?.kind === 'people')
       ensure(
-        o.beneficiaries.personIds.every((id) => people.has(id)),
+        o.beneficiaries.personIds.every(knownPerson),
         'BROKEN_REFERENCE',
         'Выгодоприобретатель не найден',
+      );
+    let previousThrough = '';
+    for (const entry of o.attributionHistory ?? []) {
+      ensure(
+        entry.through > previousThrough &&
+          (!entry.ownerPersonId || knownPerson(entry.ownerPersonId)) &&
+          (entry.beneficiaries.kind !== 'people' ||
+            entry.beneficiaries.personIds.every(knownPerson)),
+        'INVALID_ATTRIBUTION_HISTORY',
+        'История ответственных и бенефициаров повреждена',
+      );
+      previousThrough = entry.through;
+    }
+    if (o.beneficiaryArchive)
+      ensure(
+        o.beneficiaryArchive.personIds.every((id) => people.has(id)),
+        'BROKEN_REFERENCE',
+        'Архивный бенефициар не найден',
       );
     ensure(
       !o.activeTo ||
@@ -508,7 +538,7 @@ export function validateState(input: unknown): State {
     const o = obligations.get(e.obligationId);
     ensure(
       o &&
-        (!e.personId || people.has(e.personId)) &&
+        (!e.personId || knownPerson(e.personId)) &&
         (!e.serviceAccountId || accounts.has(e.serviceAccountId)),
       'BROKEN_REFERENCE',
       'Назначение содержит неизвестную ссылку',
@@ -616,7 +646,7 @@ export function validateState(input: unknown): State {
   }
   for (const p of s.payments) {
     ensure(
-      people.has(p.payerPersonId),
+      knownPerson(p.payerPersonId),
       'BROKEN_REFERENCE',
       'Плательщик не найден',
     );
@@ -668,7 +698,7 @@ export function validateState(input: unknown): State {
   for (const schedule of s.automaticPayments!) {
     ensure(
       obligations.has(schedule.obligationId) &&
-        people.has(schedule.payerPersonId),
+        knownPerson(schedule.payerPersonId),
       'BROKEN_REFERENCE',
       'Не найдено обязательство или плательщик автоплатежа',
     );
@@ -723,6 +753,7 @@ export function initializeDefaults(s: State): void {
     timeZone: s.household.timezone,
   };
   s.household.color ??= DEFAULT_HOUSEHOLD_COLOR;
+  s.household.nobodyColor ??= DEFAULT_NOBODY_COLOR;
   for (const [index, person] of s.people.entries())
     person.color ??= personColors[index % personColors.length];
   for (const obligation of s.obligations) {
@@ -827,6 +858,24 @@ export function applyCommands(
   );
   const s = structuredClone(state);
   initializeDefaults(s);
+  const ensureAssignable = (personId: string | undefined) => {
+    if (!personId) return;
+    ensure(
+      personId === NOBODY_PERSON_ID ||
+        s.people.some(
+          (person) => person.id === personId && person.archivedAt === undefined,
+        ),
+      'PERSON_NOT_ACTIVE',
+      'Выберите активного члена семьи или Никого',
+    );
+  };
+  const ensureAssignableBeneficiaries = (
+    beneficiaries: import('./types').Beneficiaries | undefined,
+  ) => {
+    if (beneficiaries?.kind === 'people')
+      for (const personId of beneficiaries.personIds)
+        ensureAssignable(personId);
+  };
   const allocations = (
     paymentId: string,
     items: AllocationInput[],
@@ -852,6 +901,11 @@ export function applyCommands(
     let details: Record<string, unknown> | undefined;
     switch (c.type) {
       case 'AddPerson':
+        ensure(
+          c.payload.id !== NOBODY_PERSON_ID,
+          'RESERVED_PERSON_ID',
+          'Этот идентификатор зарезервирован для сущности Никто',
+        );
         s.people.push(c.payload);
         refs.push(c.payload.id);
         break;
@@ -864,12 +918,63 @@ export function applyCommands(
         refs.push(person.id);
         break;
       }
+      case 'DeletePerson':
+        deletePerson(s, c.payload.personId);
+        refs.push(c.payload.personId);
+        break;
+      case 'ArchivePerson': {
+        const today = householdToday(s, new Date(context.now));
+        ensure(
+          !c.payload.expectedDate || c.payload.expectedDate === today,
+          'MEMBER_PREVIEW_EXPIRED',
+          'Дата предпросмотра изменилась. Откройте подтверждение заново.',
+        );
+        const preview = archivePerson(
+          s,
+          c.payload.personId,
+          c.payload.soleBeneficiaryPolicy,
+          context,
+          today,
+        );
+        details = {
+          soleBeneficiaryObligationIds: preview.soleBeneficiaryObligationIds,
+          stoppedObligations:
+            c.payload.soleBeneficiaryPolicy === 'end_at_last_accrual'
+              ? preview.stoppedObligations
+              : [],
+        };
+        refs.push(c.payload.personId, ...preview.soleBeneficiaryObligationIds);
+        break;
+      }
+      case 'RestorePerson': {
+        ensure(
+          !c.payload.expectedDate ||
+            c.payload.expectedDate === householdToday(s, new Date(context.now)),
+          'MEMBER_PREVIEW_EXPIRED',
+          'Дата предпросмотра изменилась. Откройте подтверждение заново.',
+        );
+        const preview = restorePerson(
+          s,
+          c.payload.personId,
+          c.payload.restoreBeneficiaries,
+          householdToday(s, new Date(context.now)),
+        );
+        details = {
+          restoredBeneficiaryObligationIds: c.payload.restoreBeneficiaries
+            ? preview.restorableObligationIds
+            : [],
+        };
+        refs.push(c.payload.personId, ...preview.restorableObligationIds);
+        break;
+      }
       case 'UpdateObligation': {
         const obligation = s.obligations.find(
           (obligation) => obligation.id === c.payload.obligationId,
         );
         ensure(obligation, 'NOT_FOUND', 'Обязательство не найдено');
         const { ownerPersonId, activeTo, ...rest } = c.payload.patch;
+        if (ownerPersonId !== null) ensureAssignable(ownerPersonId);
+        ensureAssignableBeneficiaries(rest.beneficiaries);
         ensure(
           activeTo === undefined ||
             (activeTo ?? undefined) === obligation.activeTo,
@@ -877,6 +982,8 @@ export function applyCommands(
           'Изменяйте даты через редактор графика с предпросмотром последствий',
         );
         Object.assign(obligation, rest);
+        if (rest.beneficiaries !== undefined)
+          delete obligation.beneficiaryArchive;
         if (ownerPersonId !== undefined)
           obligation.ownerPersonId = ownerPersonId ?? undefined;
         refs.push(obligation.id);
@@ -903,6 +1010,7 @@ export function applyCommands(
         break;
       }
       case 'AddAutomaticPayment':
+        ensureAssignable(c.payload.schedule.payerPersonId);
         ensure(
           !s.automaticPayments!.some(
             (schedule) =>
@@ -939,6 +1047,10 @@ export function applyCommands(
         break;
       case 'AddObligation': {
         const p = c.payload;
+        ensureAssignable(p.obligation.ownerPersonId);
+        ensureAssignableBeneficiaries(p.obligation.beneficiaries);
+        for (const entitlement of p.entitlements ?? [])
+          ensureAssignable(entitlement.personId);
         const old = s.providers.find((x) => x.id === p.provider.id);
         ensure(
           !old || JSON.stringify(old) === JSON.stringify(p.provider),
@@ -975,6 +1087,7 @@ export function applyCommands(
         break;
       }
       case 'RecordPaymentAndAllocate':
+        ensureAssignable(c.payload.payment.payerPersonId);
         ensure(
           c.payload.payment.source === 'manual',
           'INVALID_SOURCE',
@@ -996,6 +1109,8 @@ export function applyCommands(
         refs.push(c.payload.paymentId);
         break;
       case 'ImportPayments': {
+        for (const payment of c.payload.payments)
+          ensureAssignable(payment.payerPersonId);
         const ids = new Set(s.payments.map((p) => p.id)),
           externalRefs = new Set(
             s.payments

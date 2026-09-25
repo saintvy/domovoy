@@ -46,6 +46,14 @@ transactions and measurements of memory and end-to-end latency.
 
 ## Authentication and authorization
 
+Person lifecycle commands use the existing snapshot transaction and receipt, with
+membership removal and session/invitation revocation in the same commit. Nobody is
+a reserved virtual financial reference, never a membership. Optional attribution
+history and restoration provenance on obligations retain archived chart ownership.
+No SQL migration or AWS resource is added. Deploy updated API and maintenance readers
+before clients that write this metadata; old strict readers do not accept it.
+See [member lifecycle](member-lifecycle.md).
+
 Google is the only identity provider, federated through Cognito. Public browser
 clients use authorization code flow with PKCE, state and nonce. Production API
 Gateway validates JWTs; the API also checks identity claims against its trusted

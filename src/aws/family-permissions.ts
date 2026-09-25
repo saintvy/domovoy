@@ -13,6 +13,9 @@ const adminOnly = new Set([
   'UpdateHousehold',
   'AddPerson',
   'UpdatePerson',
+  'DeletePerson',
+  'ArchivePerson',
+  'RestorePerson',
   'DeleteObligation',
 ]);
 const allowedChanges = new Set([

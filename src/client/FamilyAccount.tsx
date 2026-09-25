@@ -1,3 +1,4 @@
+import { PersonLifecycleDialog } from './PersonLifecycle';
 import { ObligationIcon } from './ObligationIcons';
 import './family-account.css';
 import {
@@ -9,7 +10,12 @@ import {
   type FormEvent,
 } from 'react';
 import { ChevronDown, Mail } from 'lucide-react';
-import { householdToday, type DailyReportTime, type State } from '../domain';
+import {
+  householdToday,
+  type Command,
+  type DailyReportTime,
+  type State,
+} from '../domain';
 import { availableFamilyObligations } from './family-availability';
 import { api, db, type User } from './store';
 import { clearInvitation, pendingInvitation, INVITATION_CHANGED } from './auth';
@@ -428,6 +434,7 @@ export function FamilyAccessPanel({
   user,
   onChange,
   onSavePerson,
+  onLifecycle,
   onOpen,
   saving = false,
   operationError = '',
@@ -437,6 +444,7 @@ export function FamilyAccessPanel({
   state: State;
   user: User;
   onChange: Change;
+  onLifecycle: (commands: Command[], label: string) => Promise<void>;
   onSavePerson: (
     personId: string,
     patch: { displayName: string; color: string },
@@ -451,6 +459,8 @@ export function FamilyAccessPanel({
     [error, setError] = useState(''),
     [working, setBusy] = useState(false);
   const busy = working || saving;
+  const [showArchive, setShowArchive] = useState(false);
+  const [lifecyclePerson, setLifecyclePerson] = useState<string | null>(null);
   const [displayName, setDisplayName] = useState(''),
     [color, setColor] = useState('#597bc1');
   const [expanded, setExpanded] = useState<Set<string>>(new Set()),
@@ -891,6 +901,57 @@ export function FamilyAccessPanel({
           );
         })}
       </div>
+      <button
+        className="text-button family-archive-link"
+        onClick={() => setShowArchive(!showArchive)}
+        aria-expanded={showArchive}
+      >
+        {t('Архив участников', 'Member archive')} (
+        {state.people.filter((person) => person.archivedAt).length})
+      </button>
+      {showArchive && (
+        <div
+          className="panel"
+          aria-label={t('Архив участников', 'Member archive')}
+        >
+          {state.people
+            .filter((person) => person.archivedAt)
+            .map((person) => (
+              <div className="simple-row" key={person.id}>
+                <span
+                  className="family-person-dot"
+                  style={{ background: person.color ?? '#597bc1' }}
+                  aria-hidden="true"
+                />
+                <span className="grow">{person.displayName}</span>
+                {admin && (
+                  <button
+                    className="button secondary"
+                    disabled={busy}
+                    onClick={() => setLifecyclePerson(person.id)}
+                  >
+                    {t('Восстановить или удалить', 'Restore or delete')}
+                  </button>
+                )}
+              </div>
+            ))}
+          {!state.people.some((person) => person.archivedAt) && (
+            <p className="muted">{t('Архив пуст', 'Archive is empty')}</p>
+          )}
+        </div>
+      )}
+      {lifecyclePerson && (
+        <PersonLifecycleDialog
+          state={state}
+          personId={lifecyclePerson}
+          today={today}
+          busy={busy}
+          error={operationError}
+          submit={onLifecycle}
+          close={() => setLifecyclePerson(null)}
+          t={t}
+        />
+      )}
       {selectedPerson && (
         <div
           className="family-email-backdrop"
@@ -958,6 +1019,25 @@ export function FamilyAccessPanel({
                 {t('Сохранить имя и цвет', 'Save name and colour')}
               </button>
             </form>
+            {admin &&
+              access &&
+              selectedMember?.role !== 'admin' &&
+              selectedMember?.id !== user.id &&
+              selectedPerson.id !== user.personId && (
+                <button
+                  className="button danger"
+                  disabled={busy}
+                  onClick={() => {
+                    setEmailPerson(null);
+                    setLifecyclePerson(selectedPerson.id);
+                  }}
+                >
+                  {t(
+                    'Удалить или архивировать участника',
+                    'Delete or archive member',
+                  )}
+                </button>
+              )}
             <label className="field">
               <span>{t('Права доступа', 'Permissions')}</span>
               <select

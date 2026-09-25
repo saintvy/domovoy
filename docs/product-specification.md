@@ -142,6 +142,36 @@ If the head leaves without a transfer, choose a new head randomly among remainin
 account holders. People without accounts are ineligible. With no accounts left,
 close access immediately and clean data asynchronously. There is no seven-day undo window.
 
+### Deleting, archiving and restoring people
+
+An administrator may permanently delete or archive a person, including a person
+without an account. The head must transfer authority first. Both operations revoke
+linked family access, sessions and pending invitations in the financial command
+transaction. Restore never restores account access; send a new invitation.
+
+Nobody is a universal virtual assignment, distinct from Whole family, with default
+black color configurable in household settings. It can be responsible, a payer or
+a beneficiary; choosing no beneficiary checkboxes means Nobody. It has no account,
+membership or editable person card. Permanent deletion replaces the person's
+current and historical financial references with Nobody, retaining money records,
+immutable authorship and the audit log.
+
+Archiving preserves the person's name and color for past charges and payments,
+hides them from active selectors, and replaces future assignments with Nobody.
+Historical attribution follows charge due dates through the household accounting
+date of archival. The family view offers a small archive link. For sole-beneficiary
+obligations, choose continuing charges for Nobody or ending at the exclusive end
+of the last accrued billing interval. Future records with allocations, waivers,
+confirmed zero amounts or automatic run receipts remain; the preview discloses
+them. Other unprotected future periods are removed and automatic schedules on
+stopped obligations are disabled. Existing debt, payments and refunds survive.
+
+Restoring offers reassignment of still-eligible Nobody beneficiary links. Explicit
+beneficiary edits invalidate those links; unrelated edits do not. Existing Nobody
+shares remain. Restoration preserves historical attribution and never restarts
+stopped obligations/schedules or restores responsibility and automatic payer
+assignments. See [member lifecycle](member-lifecycle.md) for contracts and retries.
+
 ## 4. Domain model
 
 IDs are stable and references are validated. Money is a safe integer in minor

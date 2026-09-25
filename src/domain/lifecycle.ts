@@ -1,7 +1,9 @@
 import type {
+  Beneficiaries,
   BillingPeriod,
   BillingRule,
   CommandContext,
+  Obligation,
   ObligationScheduleChange,
   OutOfRangePaymentPolicy,
   State,
@@ -10,7 +12,333 @@ import { addDays, addMonths, generatePeriods, safeSum, stableId } from './core';
 import { ensure, isISODate } from './validation';
 import { convertMinorAmount, valuePayment, valuePeriod } from './currency';
 import { settleObligationCredits } from './payments';
-import { intervalEnd } from './billing';
+import { intervalEnd, lockedBillingPeriodIds } from './billing';
+
+export const NOBODY_PERSON_ID = '00000000-0000-5000-a000-000000000000';
+export const DEFAULT_NOBODY_COLOR = '#000000';
+
+export interface PersonLifecyclePreview {
+  soleBeneficiaryObligationIds: string[];
+  restorableObligationIds: string[];
+  stoppedObligations: {
+    obligationId: string;
+    activeTo: string;
+    preservedFuturePeriodIds: string[];
+    removedFuturePeriodIds: string[];
+    automaticPaymentIds: string[];
+  }[];
+}
+
+function nobodyBeneficiaries(
+  beneficiaries: Beneficiaries,
+  personId: string,
+): Beneficiaries {
+  if (beneficiaries.kind === 'household') return beneficiaries;
+  const personIds = [
+    ...new Set(
+      beneficiaries.personIds.map((id) =>
+        id === personId ? NOBODY_PERSON_ID : id,
+      ),
+    ),
+  ];
+  return { kind: 'people', personIds };
+}
+
+function appendAttributionSnapshot(
+  obligation: Obligation,
+  through: string,
+): void {
+  const history = (obligation.attributionHistory ??= []);
+  if (history.length && history.at(-1)!.through >= through) return;
+  history.push({
+    through,
+    ownerPersonId: obligation.ownerPersonId,
+    beneficiaries: structuredClone(
+      obligation.beneficiaries ?? { kind: 'household' },
+    ),
+  });
+}
+
+export function personAttributionForDate(
+  obligation: Obligation,
+  date: string,
+): { ownerPersonId?: string; beneficiaries: Beneficiaries } {
+  const historical = obligation.attributionHistory?.find(
+    (entry) => entry.through >= date,
+  );
+  return historical
+    ? {
+        ownerPersonId: historical.ownerPersonId,
+        beneficiaries: historical.beneficiaries,
+      }
+    : {
+        ownerPersonId: obligation.ownerPersonId,
+        beneficiaries: obligation.beneficiaries ?? { kind: 'household' },
+      };
+}
+
+function stopPlan(state: State, obligation: Obligation, today: string) {
+  const candidates = new Map(
+    state.periods
+      .filter((period) => period.obligationId === obligation.id)
+      .map((period) => [period.id, period]),
+  );
+  if (!obligation.activeTo || obligation.activeTo > today) {
+    const rules = state.rules.filter(
+        (rule) => rule.obligationId === obligation.id && !rule.superseded,
+      ),
+      finalRuleEnd = rules
+        .map((rule) => rule.effectiveTo)
+        .filter((date): date is string => !!date)
+        .sort()
+        .at(-1),
+      reference =
+        rules.every((rule) => !!rule.effectiveTo) &&
+        finalRuleEnd &&
+        finalRuleEnd <= today
+          ? addDays(finalRuleEnd, -1)
+          : today,
+      from =
+        obligation.activeFrom > addDays(reference, -800)
+          ? obligation.activeFrom
+          : addDays(reference, -800),
+      toCandidate = addDays(reference, 367),
+      to =
+        toCandidate < addDays(today, 367) ? toCandidate : addDays(today, 367);
+    if (from < to) {
+      const isolated = {
+        ...state,
+        obligations: [obligation],
+        rules,
+        periods: [...candidates.values()],
+      };
+      for (const period of generatePeriods(isolated, from, to))
+        candidates.set(period.id, period);
+    }
+  }
+  const accrued = [...candidates.values()].filter(
+    (period) => period.dueDate <= today,
+  );
+  let activeTo =
+    obligation.activeTo && obligation.activeTo <= today
+      ? obligation.activeTo
+      : (accrued
+          .map((period) => period.periodEnd)
+          .sort()
+          .at(-1) ?? obligation.activeFrom);
+  if (obligation.activeTo && obligation.activeTo < activeTo)
+    activeTo = obligation.activeTo;
+  const locked = lockedBillingPeriodIds(state),
+    future = state.periods.filter(
+      (period) =>
+        period.obligationId === obligation.id && period.periodStart >= activeTo,
+    ),
+    protectedIds = new Set(
+      future
+        .filter((period) => locked.has(period.id) || period.dueDate <= today)
+        .map((period) => period.id),
+    );
+  return {
+    obligationId: obligation.id,
+    activeTo,
+    preservedFuturePeriodIds: future
+      .filter((period) => protectedIds.has(period.id))
+      .map((period) => period.id),
+    removedFuturePeriodIds: future
+      .filter((period) => !protectedIds.has(period.id))
+      .map((period) => period.id),
+    automaticPaymentIds: (state.automaticPayments ?? [])
+      .filter((schedule) => schedule.obligationId === obligation.id)
+      .map((schedule) => schedule.id),
+  };
+}
+
+export function previewPersonLifecycle(
+  state: State,
+  personId: string,
+  today: string,
+): PersonLifecyclePreview {
+  ensure(
+    state.people.some((person) => person.id === personId),
+    'NOT_FOUND',
+    'Член семьи не найден',
+  );
+  ensure(isISODate(today), 'INVALID_DATE_RANGE', 'Проверьте дату семьи');
+  const sole = state.obligations.filter(
+    (obligation) =>
+      obligation.beneficiaries?.kind === 'people' &&
+      obligation.beneficiaries.personIds.length === 1 &&
+      obligation.beneficiaries.personIds[0] === personId,
+  );
+  return {
+    soleBeneficiaryObligationIds: sole.map((obligation) => obligation.id),
+    restorableObligationIds: state.obligations
+      .filter(
+        (obligation) =>
+          obligation.beneficiaryArchive?.personIds.includes(personId) &&
+          obligation.beneficiaries?.kind === 'people' &&
+          obligation.beneficiaries.personIds.includes(NOBODY_PERSON_ID),
+      )
+      .map((obligation) => obligation.id),
+    stoppedObligations: sole.map((obligation) =>
+      stopPlan(state, obligation, today),
+    ),
+  };
+}
+
+export function archivePerson(
+  state: State,
+  personId: string,
+  policy: 'keep_nobody' | 'end_at_last_accrual',
+  context: CommandContext,
+  today: string,
+): PersonLifecyclePreview {
+  const person = state.people.find((candidate) => candidate.id === personId);
+  ensure(person, 'NOT_FOUND', 'Член семьи не найден');
+  ensure(
+    !person.archivedAt,
+    'PERSON_ALREADY_ARCHIVED',
+    'Член семьи уже в архиве',
+  );
+  const preview = previewPersonLifecycle(state, personId, today),
+    sole = new Set(preview.soleBeneficiaryObligationIds);
+  for (const obligation of state.obligations) {
+    const owns = obligation.ownerPersonId === personId,
+      benefits =
+        obligation.beneficiaries?.kind === 'people' &&
+        obligation.beneficiaries.personIds.includes(personId);
+    if (!owns && !benefits) continue;
+    appendAttributionSnapshot(obligation, today);
+    if (owns) obligation.ownerPersonId = NOBODY_PERSON_ID;
+    if (benefits) {
+      const provenance = (obligation.beneficiaryArchive ??= {
+        personIds: [],
+        hadNobody:
+          obligation.beneficiaries!.kind === 'people' &&
+          obligation.beneficiaries!.personIds.includes(NOBODY_PERSON_ID),
+      });
+      if (!provenance.personIds.includes(personId))
+        provenance.personIds.push(personId);
+      obligation.beneficiaries = nobodyBeneficiaries(
+        obligation.beneficiaries!,
+        personId,
+      );
+    }
+  }
+  for (const schedule of state.automaticPayments ?? [])
+    if (schedule.payerPersonId === personId)
+      schedule.payerPersonId = NOBODY_PERSON_ID;
+  if (policy === 'end_at_last_accrual') {
+    for (const plan of preview.stoppedObligations) {
+      if (!sole.has(plan.obligationId)) continue;
+      const obligation = state.obligations.find(
+        (candidate) => candidate.id === plan.obligationId,
+      )!;
+      obligation.activeTo = plan.activeTo;
+      obligation.lifecycleState = 'archived';
+      const removed = new Set(plan.removedFuturePeriodIds);
+      state.periods = state.periods.filter((period) => !removed.has(period.id));
+      for (const schedule of state.automaticPayments ?? [])
+        if (schedule.obligationId === obligation.id) schedule.enabled = false;
+    }
+  }
+  person.archivedAt = context.now;
+  return preview;
+}
+
+export function restorePerson(
+  state: State,
+  personId: string,
+  restoreBeneficiaries: boolean,
+  today: string,
+): PersonLifecyclePreview {
+  const person = state.people.find((candidate) => candidate.id === personId);
+  ensure(person, 'NOT_FOUND', 'Член семьи не найден');
+  ensure(
+    person.archivedAt,
+    'PERSON_NOT_ARCHIVED',
+    'Член семьи не находится в архиве',
+  );
+  const preview = previewPersonLifecycle(state, personId, today);
+  for (const obligation of state.obligations) {
+    const provenance = obligation.beneficiaryArchive;
+    if (!provenance?.personIds.includes(personId)) continue;
+    const hasNobody =
+      obligation.beneficiaries?.kind === 'people' &&
+      obligation.beneficiaries.personIds.includes(NOBODY_PERSON_ID);
+    if (restoreBeneficiaries && hasNobody) {
+      appendAttributionSnapshot(obligation, today);
+      const remaining = provenance.personIds.filter((id) => id !== personId),
+        removeNobody = remaining.length === 0 && !provenance.hadNobody,
+        personIds =
+          obligation.beneficiaries!.kind === 'people'
+            ? obligation.beneficiaries!.personIds.filter(
+                (id) => id !== NOBODY_PERSON_ID || !removeNobody,
+              )
+            : [];
+      if (!personIds.includes(personId)) personIds.push(personId);
+      obligation.beneficiaries = { kind: 'people', personIds };
+      if (remaining.length)
+        obligation.beneficiaryArchive = { ...provenance, personIds: remaining };
+      else delete obligation.beneficiaryArchive;
+    } else {
+      const remaining = provenance.personIds.filter((id) => id !== personId);
+      if (remaining.length)
+        obligation.beneficiaryArchive = {
+          personIds: remaining,
+          hadNobody: true,
+        };
+      else delete obligation.beneficiaryArchive;
+    }
+  }
+  delete person.archivedAt;
+  return preview;
+}
+
+export function deletePerson(state: State, personId: string): void {
+  const index = state.people.findIndex((person) => person.id === personId);
+  ensure(index >= 0, 'NOT_FOUND', 'Член семьи не найден');
+  for (const obligation of state.obligations) {
+    if (obligation.ownerPersonId === personId)
+      obligation.ownerPersonId = NOBODY_PERSON_ID;
+    const deletedCurrentBeneficiary =
+      obligation.beneficiaries?.kind === 'people' &&
+      obligation.beneficiaries.personIds.includes(personId);
+    if (obligation.beneficiaries)
+      obligation.beneficiaries = nobodyBeneficiaries(
+        obligation.beneficiaries,
+        personId,
+      );
+    if (deletedCurrentBeneficiary && obligation.beneficiaryArchive)
+      obligation.beneficiaryArchive.hadNobody = true;
+    for (const entry of obligation.attributionHistory ?? []) {
+      if (entry.ownerPersonId === personId)
+        entry.ownerPersonId = NOBODY_PERSON_ID;
+      entry.beneficiaries = nobodyBeneficiaries(entry.beneficiaries, personId);
+    }
+    if (obligation.beneficiaryArchive?.personIds.includes(personId)) {
+      const remaining = obligation.beneficiaryArchive.personIds.filter(
+        (id) => id !== personId,
+      );
+      if (remaining.length)
+        obligation.beneficiaryArchive = {
+          personIds: remaining,
+          hadNobody: true,
+        };
+      else delete obligation.beneficiaryArchive;
+    }
+  }
+  for (const payment of state.payments)
+    if (payment.payerPersonId === personId)
+      payment.payerPersonId = NOBODY_PERSON_ID;
+  for (const schedule of state.automaticPayments ?? [])
+    if (schedule.payerPersonId === personId)
+      schedule.payerPersonId = NOBODY_PERSON_ID;
+  for (const entitlement of state.entitlements)
+    if (entitlement.personId === personId)
+      entitlement.personId = NOBODY_PERSON_ID;
+  state.people.splice(index, 1);
+}
 
 export interface ObligationSchedulePreview {
   affectedPeriodIds: string[];

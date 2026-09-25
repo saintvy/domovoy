@@ -29,6 +29,18 @@ serialize schema setup; the concurrency test itself opens competing transactions
 
 ## Test boundaries
 
+Member lifecycle regressions live in `tests/member-lifecycle.test.ts`,
+`tests/member-lifecycle-api.test.ts` and `e2e/member-lifecycle.spec.ts`.
+They cover virtual Nobody references, historical attribution, restoration provenance,
+charge cutoffs, protected future records, admin authorization, access revocation,
+invitation races, receipt retries, rollback and the family/archive UI. API fixtures
+use PGlite; they do not replace PostgreSQL concurrency validation or live sign-in.
+`tests/member-lifecycle-postgres.test.ts`, enabled with `BROWNIE_TEST_DOCKER=1`,
+also exercises real account/family lock ordering, concurrent target requests and
+invitation acceptance during archival, plus receipt replay. Run PostgreSQL files
+with `--maxWorkers=1` to serialize schema initialization. This test creates and
+cleans only its own random synthetic family and account records.
+
 Browser fixtures intercept API calls and use fictional household data. They test
 UI behavior, not real Google consent, SES delivery or production RDS connectivity.
 Local JWT tests exercise signature verification using test-only keys; the normal
