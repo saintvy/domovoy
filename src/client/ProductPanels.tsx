@@ -112,9 +112,15 @@ export function MonthlyCharts({
       });
     }
   // One order for the entire displayed window; column-reverse places its first entry at the bottom.
-  const legend = [...beneficiaries.values()].sort(
-    (a, b) => b.total - a.total || (a.key < b.key ? -1 : a.key > b.key ? 1 : 0),
-  );
+  const legend = [...beneficiaries.values()]
+    .filter((item) => item.key !== NOBODY_PERSON_ID || item.total > 0)
+    .sort(
+      (a, b) =>
+        Number(b.key === NOBODY_PERSON_ID) -
+          Number(a.key === NOBODY_PERSON_ID) ||
+        b.total - a.total ||
+        (a.key < b.key ? -1 : a.key > b.key ? 1 : 0),
+    );
   return (
     <section className="panel monthly-chart">
       <div className="panel-heading">
