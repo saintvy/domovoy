@@ -1,7 +1,7 @@
 import type { State } from '../domain';
 import { check } from './identity';
 
-type Actor = { id: string; role: string };
+type Actor = { id: string; role: string; canEditHistoricalPrices?: boolean };
 type Owned = { id: string; createdByUserId?: string };
 const creates = new Set([
   'AddObligation',
@@ -56,6 +56,8 @@ export function authorizeFamilyCommands(
       'FORBIDDEN',
       403,
     );
+    if (type === 'EditHistoricalPrice')
+      check(actor.canEditHistoricalPrices === true, 'FORBIDDEN', 403);
     if (adminOnly.has(type)) {
       check(actor.role === 'admin', 'FORBIDDEN', 403);
       continue;

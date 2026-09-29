@@ -256,6 +256,12 @@ describe('Family ownership, isolation and atomic PostgreSQL writes', () => {
   it('commits historical price corrections with receipts, revisions and server permissions', async () => {
     const obligation = obligationCommand();
     await commit([obligation]);
+    const legacy = await state();
+    legacy.household.allowHistoricalPriceEdits = true;
+    await local.postgres.query(
+      'UPDATE brownie_families SET state=$1::jsonb WHERE id=$2',
+      [JSON.stringify(legacy), login.user.familyId],
+    );
     const makeCorrection = (): Extract<
       Command,
       { type: 'EditHistoricalPrice' }
@@ -274,11 +280,15 @@ describe('Family ownership, isolation and atomic PostgreSQL writes', () => {
       },
     });
     await expect(commit([makeCorrection()])).rejects.toMatchObject({
-      code: 'HISTORICAL_PRICE_DISABLED',
+      code: 'FORBIDDEN',
     });
-    await commit([
-      { type: 'UpdateHousehold', payload: { allowHistoricalPriceEdits: true } },
-    ]);
+    const permissionPath = `/family/members/${alice.subject}/historical-prices`;
+    expect(await request(permissionPath, 'PATCH', { enabled: true })).toEqual({
+      ok: true,
+      canEditHistoricalPrices: true,
+    });
+    expect((await request('/session')).user.canEditHistoricalPrices).toBe(true);
+    expect((await request('/sync/state')).canEditHistoricalPrices).toBe(true);
     const ownEditor = await join(bob, 'own_editor');
     const observer = await join(eve, 'observer');
     await expect(
@@ -311,6 +321,122 @@ describe('Family ownership, isolation and atomic PostgreSQL writes', () => {
       saved.rules.find((item) => item.id === command.payload.rule?.id)?.amount,
     ).toBe(1200);
     expect(saved.household.allowHistoricalPriceEdits).toBe(true);
+    await request(permissionPath, 'PATCH', { enabled: false });
+    expect((await request('/session')).user.canEditHistoricalPrices).toBe(
+      false,
+    );
+    await expect(commit([makeCorrection()])).rejects.toMatchObject({
+      code: 'FORBIDDEN',
+    });
+  });
+  it('keeps historical price grants per member and clears them on role downgrade', async () => {
+    const member = await join(bob, 'own_editor');
+    const observer = await join(eve, 'observer');
+    expect(member.user.canEditHistoricalPrices).toBe(false);
+    expect(observer.user.canEditHistoricalPrices).toBe(false);
+    const path = `/family/members/${bob.subject}/historical-prices`;
+    await expect(
+      request(path, 'PATCH', { enabled: true }, bob, member.sessionToken),
+    ).rejects.toMatchObject({ code: 'FORBIDDEN' });
+    await expect(
+      request(`/family/members/${eve.subject}/historical-prices`, 'PATCH', {
+        enabled: true,
+      }),
+    ).rejects.toMatchObject({ code: 'FORBIDDEN' });
+    await expect(
+      request('/family/members/foreign/historical-prices', 'PATCH', {
+        enabled: true,
+      }),
+    ).rejects.toMatchObject({ code: 'NOT_FOUND' });
+    expect(await request(path, 'PATCH', { enabled: true })).toMatchObject({
+      canEditHistoricalPrices: true,
+    });
+    expect(await request(path, 'PATCH', { enabled: true })).toMatchObject({
+      canEditHistoricalPrices: true,
+    });
+    const audit = await local.postgres.query(
+      "SELECT count(*)::integer AS total FROM brownie_family_audit WHERE family_id=$1 AND action='membership.historical-prices-changed'",
+      [login.user.familyId],
+    );
+    expect((audit.rows[0] as { total: number }).total).toBe(1);
+    await expect(
+      request(path, 'PATCH', { enabled: 'true' }),
+    ).rejects.toMatchObject({ code: 'VALIDATION_FAILED' });
+    expect((await request('/session')).user.canEditHistoricalPrices).toBe(
+      false,
+    );
+    expect(
+      (await request('/session', 'GET', undefined, bob, member.sessionToken))
+        .user.canEditHistoricalPrices,
+    ).toBe(true);
+    const own = obligationCommand();
+    await commit([own], bob, member.sessionToken);
+    await commit(
+      [
+        {
+          type: 'EditHistoricalPrice',
+          payload: {
+            obligationId: own.payload.obligation.id,
+            action: 'add',
+            effectiveFrom: '2026-02-01',
+            rule: {
+              ...own.payload.rule,
+              id: randomUUID(),
+              effectiveFrom: '2026-02-01',
+              amount: 1400,
+            },
+          },
+        },
+      ],
+      bob,
+      member.sessionToken,
+    );
+    await request(`/family/members/${bob.subject}`, 'PATCH', {
+      role: 'observer',
+    });
+    await expect(
+      request('/session', 'GET', undefined, bob, member.sessionToken),
+    ).rejects.toMatchObject({ code: 'SESSION_REVOKED' });
+    const fresh = await request('/auth/session', 'POST', {}, bob, '');
+    expect(fresh.user.canEditHistoricalPrices).toBe(false);
+    await expect(
+      request(path, 'PATCH', { enabled: true }),
+    ).rejects.toMatchObject({ code: 'FORBIDDEN' });
+  });
+  it('handles explicit head grants across transfer without promoting an editor grant', async () => {
+    const member = await join(bob, 'editor');
+    await request(
+      `/family/members/${alice.subject}/historical-prices`,
+      'PATCH',
+      { enabled: true },
+    );
+    await request('/family/transfer', 'POST', { subject: bob.subject });
+    expect(
+      (await request('/session', 'GET', undefined, bob, member.sessionToken))
+        .user,
+    ).toMatchObject({ role: 'admin', canEditHistoricalPrices: false });
+    await request(
+      `/family/members/${bob.subject}/historical-prices`,
+      'PATCH',
+      { enabled: true },
+      bob,
+      member.sessionToken,
+    );
+    await request(
+      '/family/transfer',
+      'POST',
+      { subject: alice.subject },
+      bob,
+      member.sessionToken,
+    );
+    expect((await request('/session')).user).toMatchObject({
+      role: 'admin',
+      canEditHistoricalPrices: true,
+    });
+    expect(
+      (await request('/session', 'GET', undefined, bob, member.sessionToken))
+        .user,
+    ).toMatchObject({ role: 'editor', canEditHistoricalPrices: false });
   });
   it('rolls state back if saving the commit receipt fails', async () => {
     const broken: Database = {

@@ -251,6 +251,7 @@ export class FamilyApplication {
           revision: family.state.revision,
           publishedRevision: family.state.revision,
           instanceGeneration: family.generation,
+          canEditHistoricalPrices: user.canEditHistoricalPrices,
           storage: { provider: 'rds', connected: true },
           lease: null,
         };
@@ -468,6 +469,45 @@ export class FamilyApplication {
         return { ok: true };
       }
       if (
+        /^\/family\/members\/[^/]+\/historical-prices$/.test(path) &&
+        method === 'PATCH'
+      ) {
+        admin();
+        check(
+          Object.keys(body).length === 1 && typeof body.enabled === 'boolean',
+          'VALIDATION_FAILED',
+        );
+        const subject = decodeURIComponent(path.split('/')[3]);
+        const target = (
+          await client.query(
+            'SELECT subject,role,can_edit_historical_prices FROM brownie_memberships WHERE family_id=$1 AND subject=$2 FOR UPDATE',
+            [family.id, subject],
+          )
+        ).rows[0];
+        check(target, 'NOT_FOUND', 404);
+        check(
+          !body.enabled ||
+            subject === family.head_subject ||
+            ['own_editor', 'deleter'].includes(target.role),
+          'FORBIDDEN',
+          403,
+        );
+        if (target.can_edit_historical_prices !== body.enabled) {
+          await client.query(
+            'UPDATE brownie_memberships SET can_edit_historical_prices=$1 WHERE family_id=$2 AND subject=$3',
+            [body.enabled, family.id, subject],
+          );
+          await this.audit(
+            client,
+            family.id,
+            identity.subject,
+            'membership.historical-prices-changed',
+            { subject, enabled: body.enabled },
+          );
+        }
+        return { ok: true, canEditHistoricalPrices: body.enabled };
+      }
+      if (
         /^\/family\/members\/[^/]+\/reminders$/.test(path) &&
         method === 'PATCH'
       ) {
@@ -533,7 +573,7 @@ export class FamilyApplication {
         else {
           check(roles.includes(body.role), 'VALIDATION_FAILED');
           await client.query(
-            'UPDATE brownie_memberships SET role=$1 WHERE family_id=$2 AND subject=$3',
+            "UPDATE brownie_memberships SET role=$1,can_edit_historical_prices=CASE WHEN $1 IN ('own_editor','deleter') THEN can_edit_historical_prices ELSE false END WHERE family_id=$2 AND subject=$3",
             [body.role, family.id, subject],
           );
         }
@@ -569,6 +609,10 @@ export class FamilyApplication {
         await client.query(
           'UPDATE brownie_families SET head_subject=$1 WHERE id=$2',
           [body.subject, family.id],
+        );
+        await client.query(
+          "UPDATE brownie_memberships SET can_edit_historical_prices=false WHERE family_id=$1 AND subject=$2 AND role NOT IN ('own_editor','deleter')",
+          [family.id, identity.subject],
         );
         await this.audit(
           client,
@@ -651,6 +695,7 @@ export class FamilyApplication {
       displayName: identity.name,
       personId: m.person_id,
       role: f.head_subject === identity.subject ? 'admin' : m.role,
+      canEditHistoricalPrices: m.can_edit_historical_prices === true,
       enabled: true,
       familyId: f.id,
       preferredLocale: isAppLocale(preferredLocale)

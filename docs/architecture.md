@@ -45,11 +45,13 @@ serialize. The next scaling step is targeted SQL reads and writes, shorter
 transactions and measurements of memory and end-to-end latency.
 
 Historical price correction uses the same family command transaction, revision
-check and operation receipt as other financial writes. The administrator controls
-the household permission. The domain keeps prior price versions for audit, changes
-only the interval selected by the correction, and requests trusted historical
-exchange rates before recalculating charges and payment allocations. No SQL schema
-or AWS resource is added.
+check and operation receipt as other financial writes. A personal permission in
+`brownie_memberships` is assigned by the administrator and rechecked from SQL on
+each command; the former household-wide setting is ignored. The domain keeps
+prior price versions for audit, changes only the interval selected by the
+correction, and requests trusted historical exchange rates before recalculating
+charges and payment allocations. The additive membership-column migration must
+run before publishing the permission-aware API.
 
 ## Authentication and authorization
 

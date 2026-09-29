@@ -1060,6 +1060,32 @@ export function FamilyAccessPanel({
                 <RoleOptions t={t} allowAdmin={Boolean(selectedMember)} />
               </select>
             </label>
+            {admin &&
+              selectedMember &&
+              ['admin', 'own_editor', 'deleter'].includes(
+                selectedMember.role,
+              ) && (
+                <label className="checkbox-row">
+                  <input
+                    type="checkbox"
+                    checked={selectedMember.canEditHistoricalPrices === true}
+                    disabled={busy}
+                    onChange={(event) =>
+                      void perform(
+                        '/family/members/' +
+                          encodeURIComponent(selectedMember.id) +
+                          '/historical-prices',
+                        { enabled: event.target.checked },
+                        'PATCH',
+                      )
+                    }
+                  />
+                  {t(
+                    'Разрешить правку истории стоимости',
+                    'Allow editing historical prices',
+                  )}
+                </label>
+              )}
             {selectedMember ? (
               <>
                 <label className="field">

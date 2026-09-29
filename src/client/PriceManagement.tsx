@@ -611,9 +611,7 @@ export function PriceHistory({
               <th>{t('Окончание', 'Until')}</th>
               <th>{t('Стоимость', 'Price')}</th>
               <th>{t('График', 'Schedule')}</th>
-              {canEdit && state.household.allowHistoricalPriceEdits && (
-                <th>{t('Действия', 'Actions')}</th>
-              )}
+              {canEdit && <th>{t('Действия', 'Actions')}</th>}
             </tr>
           </thead>
           <tbody>
@@ -631,7 +629,7 @@ export function PriceHistory({
                     : formatMoney(rule.amount, rule.currency)}
                 </td>
                 <td>{cadenceName(rule.cadence, t)}</td>
-                {canEdit && state.household.allowHistoricalPriceEdits && (
+                {canEdit && (
                   <td>
                     {!rule.superseded && (
                       <>
@@ -664,7 +662,7 @@ export function PriceHistory({
           {error}
         </p>
       )}
-      {canEdit && state.household.allowHistoricalPriceEdits && (
+      {canEdit && (
         <section className="price-history-editor">
           {!editing && availableStarts.length > 0 && (
             <button className="button secondary" onClick={beginAdd}>

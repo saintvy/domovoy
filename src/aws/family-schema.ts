@@ -15,9 +15,11 @@ CREATE TABLE IF NOT EXISTS brownie_memberships (
  subject text PRIMARY KEY REFERENCES brownie_accounts(subject),
  family_id text NOT NULL REFERENCES brownie_families(id) ON DELETE CASCADE,
  person_id text NOT NULL, role text NOT NULL CHECK(role IN ('editor','own_editor','deleter','observer')),
+ can_edit_historical_prices boolean NOT NULL DEFAULT false,
  UNIQUE(family_id,person_id)
 );
 CREATE INDEX IF NOT EXISTS brownie_memberships_family ON brownie_memberships(family_id);
+ALTER TABLE brownie_memberships ADD COLUMN IF NOT EXISTS can_edit_historical_prices boolean NOT NULL DEFAULT false;
 ALTER TABLE brownie_memberships ADD COLUMN IF NOT EXISTS telegram_report_time jsonb;
 ALTER TABLE brownie_memberships ADD COLUMN IF NOT EXISTS next_telegram_report_at bigint;
 CREATE INDEX IF NOT EXISTS brownie_memberships_telegram_due

@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { mockGoogleHousehold, TEST_DATE } from './household-fixture';
+import { mockGoogleHousehold, TEST_DATE, TEST_USER } from './household-fixture';
 import { applyCommands, lockedBillingPeriodIds } from '../src/domain';
 
 test('price change updates selected existing period and following unpaid charges, preserving history', async ({
@@ -201,17 +201,56 @@ test('administrator enables historical price editing and corrects the first pric
       rule.effectiveFrom === obligation.activeFrom,
   )!;
   const initialAmount = first.amount!;
+  let permitted = false;
+  const head = {
+    ...TEST_USER,
+    email: TEST_USER.login,
+    personId: original.people[0].id,
+    canEditHistoricalPrices: permitted,
+  };
+  server.setUser(head);
+  await page.route('**/api/family/**', (route) => {
+    const path = new URL(route.request().url()).pathname;
+    if (path === '/api/family/members')
+      return route.fulfill({
+        json: {
+          members: [{ ...head, canEditHistoricalPrices: permitted }],
+          invitations: [],
+          invitationsEnabled: false,
+        },
+      });
+    if (
+      path === `/api/family/members/${head.id}/historical-prices` &&
+      route.request().method() === 'PATCH'
+    ) {
+      permitted = route.request().postDataJSON().enabled;
+      server.setUser({ ...head, canEditHistoricalPrices: permitted });
+      return route.fulfill({
+        json: { ok: true, canEditHistoricalPrices: permitted },
+      });
+    }
+    return route.fulfill({ status: 404, json: { code: 'NOT_FOUND' } });
+  });
   await server.open();
-  await page.getByRole('button', { name: 'Настройки', exact: true }).click();
   await page
-    .getByRole('checkbox', { name: 'Разрешить правку истории стоимости' })
-    .check();
-  await page
-    .getByRole('button', { name: 'Сохранить настройки', exact: true })
+    .getByRole('button', { name: 'Семья и доступы', exact: true })
     .click();
-  await expect
-    .poll(() => server.read().household.allowHistoricalPriceEdits)
-    .toBe(true);
+  await page
+    .locator('.family-directory-person')
+    .first()
+    .getByRole('button', { name: /^Изменить имя и цвет:/ })
+    .click();
+  const memberDialog = page.getByRole('dialog', { name: 'Участник семьи' });
+  await memberDialog
+    .getByRole('checkbox', { name: 'Разрешить правку истории стоимости' })
+    .click();
+  await expect.poll(() => permitted).toBe(true);
+  await expect(
+    memberDialog.getByRole('checkbox', {
+      name: 'Разрешить правку истории стоимости',
+    }),
+  ).toBeChecked();
+  await page.keyboard.press('Escape');
   await page.getByRole('button', { name: /^Обязательства/ }).click();
   await page
     .locator('.expense-row')
@@ -260,6 +299,7 @@ test('price history opens for an obligation older than the 25-year forecast limi
 }) => {
   const server = await mockGoogleHousehold(page);
   const state = server.read();
+  state.household.allowHistoricalPriceEdits = true;
   const obligation = state.obligations.find((item) =>
     item.title.includes('Netflix'),
   )!;
@@ -281,6 +321,11 @@ test('price history opens for an obligation older than the 25-year forecast limi
       .getByRole('dialog')
       .getByRole('heading', { name: 'История стоимости' }),
   ).toBeVisible();
+  await expect(
+    page
+      .getByRole('dialog')
+      .getByRole('button', { name: 'Добавить стоимость' }),
+  ).toHaveCount(0);
   expect(server.errors).toEqual([]);
 });
 
@@ -289,7 +334,7 @@ test('price history controls add and remove an intermediate price entry', async 
 }) => {
   const server = await mockGoogleHousehold(page);
   const state = server.read();
-  state.household.allowHistoricalPriceEdits = true;
+  server.setUser({ ...TEST_USER, canEditHistoricalPrices: true });
   const obligation = state.obligations.find((item) =>
     item.title.includes('Netflix'),
   )!;

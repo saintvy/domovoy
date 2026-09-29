@@ -104,6 +104,11 @@ assigned by the server. Old records with unknown authors may be changed only by
 editing/refunding it checks the payment author. Lifecycle edits must not indirectly
 change another author's payments or schedules. Full cascade deletion is admin-only.
 Role changes and membership removal revoke the affected family sessions.
+The administrator assigns historical-price correction access separately to each
+confirmed `admin`, `own_editor` or `deleter` member, including themselves. This
+personal permission is off by default and does not broaden a role's obligation
+authorship limits. Downgrading to `editor` or `observer` clears it. Pending
+invitations never carry this permission.
 
 ### Invitations
 
@@ -220,14 +225,15 @@ runs. A protected selected period cannot change. Preview changed/preserved perio
 and superseded future prices. Reject recurrence incompatible with existing intervals.
 Use server rates for valuations and normal rules for allocating free credit.
 
-An administrator may enable historical price editing in household settings. The
-setting is off for existing and new households until explicitly enabled. With it
-enabled, members who may edit an obligation may add a price at a billing-period
-boundary, change an existing price, or remove a later price entry. The first active
-price entry must remain on the obligation's first day and can only be changed.
-The administrator may edit any obligation; other roles retain their normal
-authorship limits. These corrections affect only the interval up to the next
-active price entry. Existing period IDs, payments, refunds, waivers, automatic-run
+An administrator may enable historical price editing for individual members in
+the family directory. With their own permission enabled, members who may edit an
+obligation may add a price at a billing-period boundary, change an existing
+price, or remove a later price entry. The first active price entry must remain
+on the obligation's first day and can only be changed.
+The administrator may edit any obligation when their personal permission is
+enabled; other roles retain their normal authorship limits. These corrections
+affect only the interval up to the next active price entry. Existing period IDs,
+payments, refunds, waivers, automatic-run
 receipts and prior rule versions remain in the audit history. Revalue affected
 charges at their due-date exchange rates and reconcile payment allocations in
 their original currencies; a lower corrected price releases unused credit.

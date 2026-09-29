@@ -17,6 +17,7 @@ export interface User {
     'admin' | 'editor' | 'own_editor' | 'deleter' | 'observer' | 'participant';
   personId?: string;
   familyId?: string;
+  canEditHistoricalPrices?: boolean;
   mustChangePassword?: boolean;
 }
 export interface Lease {

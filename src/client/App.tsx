@@ -562,6 +562,16 @@ export default function App() {
       if (document.visibilityState === 'visible' && !inFlight.current)
         void api('/sync/state')
           .then((r) => {
+            if (typeof r.canEditHistoricalPrices === 'boolean')
+              setUser((current) =>
+                current &&
+                current.canEditHistoricalPrices !== r.canEditHistoricalPrices
+                  ? {
+                      ...current,
+                      canEditHistoricalPrices: r.canEditHistoricalPrices,
+                    }
+                  : current,
+              );
             if (
               r.publishedRevision !== undefined &&
               r.publishedRevision !== state?.revision
@@ -2157,7 +2167,7 @@ export default function App() {
                   </div>
                   {state && financial && (
                     <HouseholdPreferences
-                      key={`${state.household.currency}:${state.household.color ?? ''}:${state.household.allowHistoricalPriceEdits ?? false}`}
+                      key={`${state.household.currency}:${state.household.color ?? ''}`}
                       state={state}
                       t={t}
                       isAdmin={isAdmin}
@@ -2238,6 +2248,7 @@ export default function App() {
               periods={periods}
               busy={busy}
               canEdit={canManageModal()}
+              canEditHistoricalPrices={user?.canEditHistoricalPrices === true}
               canCreate={canEdit}
               canDelete={canManageModal()}
               canDeleteFull={isAdmin}
@@ -2489,6 +2500,7 @@ type ModalProps = {
   periods: BillingPeriod[];
   busy: boolean;
   canEdit: boolean;
+  canEditHistoricalPrices: boolean;
   canCreate?: boolean;
   canDelete: boolean;
   canDeleteFull?: boolean;
@@ -2666,7 +2678,13 @@ function ModalContent(p: ModalProps) {
       />
     );
   if (modal.type === 'priceHistory')
-    return <PriceHistory {...p} obligation={modal.data} />;
+    return (
+      <PriceHistory
+        {...p}
+        obligation={modal.data}
+        canEdit={p.canEdit && p.canEditHistoricalPrices}
+      />
+    );
   if (modal.type === 'obligation' || modal.type === 'editObligation')
     return (
       <ObligationEditor

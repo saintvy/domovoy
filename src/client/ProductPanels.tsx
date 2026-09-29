@@ -613,9 +613,6 @@ export function HouseholdPreferences({
       state.household.telegramReportTime?.timeZone ?? state.household.timezone,
     ),
     [acknowledged, setAcknowledged] = useState(false);
-  const [allowHistoricalPriceEdits, setAllowHistoricalPriceEdits] = useState(
-    state.household.allowHistoricalPriceEdits ?? false,
-  );
   return (
     <form
       onSubmit={(event) => {
@@ -642,7 +639,6 @@ export function HouseholdPreferences({
                 ],
                 timezone: String(form.get('timezone')),
                 locale: state.household.locale,
-                allowHistoricalPriceEdits,
                 telegramReportTime: {
                   hour: reportHour,
                   timeZone: reportTimeZone,
@@ -807,26 +803,6 @@ export function HouseholdPreferences({
           )}
         </p>
       </fieldset>
-      <label className="checkbox-row">
-        <input
-          type="checkbox"
-          checked={allowHistoricalPriceEdits}
-          onChange={(event) =>
-            setAllowHistoricalPriceEdits(event.target.checked)
-          }
-          disabled={!isAdmin || busy}
-        />
-        {t(
-          'Разрешить правку истории стоимости',
-          'Allow editing historical prices',
-        )}
-      </label>
-      <p className="muted">
-        {t(
-          'Разрешение действует для участников, которым доступна правка обязательства. Изменение прошлой цены пересчитает затронутые начисления; платежи и возвраты останутся в истории.',
-          'Members who can edit an obligation may also edit its price history. Changing an old price recalculates affected charges; payments and refunds remain in the ledger.',
-        )}
-      </p>
       <label className="field">
         <span>{t('Дополнительные валюты', 'Additional currencies')}</span>
         <input

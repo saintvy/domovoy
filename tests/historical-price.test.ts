@@ -31,7 +31,6 @@ function initial(): State {
         payload: {
           currency: 'CZK',
           currencies: ['CZK', 'USD'],
-          allowHistoricalPriceEdits: true,
         },
       },
       {
@@ -119,20 +118,20 @@ function apply(state: State, command: Command, withRates = true): State {
   return applyCommands(state, [command], ctx(rates));
 }
 describe('historical prices', () => {
-  it('requires administrator-enabled setting and the first price cannot be deleted', () => {
+  it('keeps legacy household flag inert and protects the first price', () => {
     const state = initial();
-    const off = applyCommands(
-      state,
-      [
-        {
-          type: 'UpdateHousehold',
-          payload: { allowHistoricalPriceEdits: false },
-        },
-      ],
-      ctx(),
-    );
+    state.household.allowHistoricalPriceEdits = true;
     expect(() =>
-      apply(off, edit(off, 'add', '2026-03-01', 20000)),
+      applyCommands(
+        state,
+        [
+          {
+            type: 'UpdateHousehold',
+            payload: { allowHistoricalPriceEdits: true },
+          },
+        ],
+        ctx(),
+      ),
     ).toThrowError();
     expect(() =>
       apply(state, edit(state, 'delete', '2026-01-01')),
@@ -284,7 +283,6 @@ describe('historical prices', () => {
           payload: {
             currency: 'USD',
             currencies: ['USD', 'JPY'],
-            allowHistoricalPriceEdits: true,
           },
         },
         {
@@ -699,6 +697,7 @@ describe('historical prices', () => {
       authorizeFamilyCommands(state, [command], {
         id: 'owner',
         role: 'own_editor',
+        canEditHistoricalPrices: true,
       }),
     ).not.toThrow();
     state.payments.push({
@@ -715,10 +714,18 @@ describe('historical prices', () => {
       authorizeFamilyCommands(state, [command], {
         id: 'owner',
         role: 'own_editor',
+        canEditHistoricalPrices: true,
       }),
     ).toThrowError();
     expect(() =>
-      authorizeFamilyCommands(state, [command], { id: 'admin', role: 'admin' }),
+      authorizeFamilyCommands(state, [command], {
+        id: 'admin',
+        role: 'admin',
+        canEditHistoricalPrices: true,
+      }),
     ).not.toThrow();
+    expect(() =>
+      authorizeFamilyCommands(state, [command], { id: 'admin', role: 'admin' }),
+    ).toThrowError();
   });
 });

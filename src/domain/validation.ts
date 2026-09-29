@@ -447,7 +447,14 @@ export const commandSchema = z.discriminatedUnion('type', [
       })
       .strict(),
   ),
-  c('UpdateHousehold', z.object(householdFields).partial().strict()),
+  c(
+    'UpdateHousehold',
+    z
+      .object(householdFields)
+      .omit({ allowHistoricalPriceEdits: true })
+      .partial()
+      .strict(),
+  ),
   c(
     'ImportPayments',
     z.object({ payments: z.array(paymentInput).min(1).max(1000) }).strict(),

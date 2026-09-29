@@ -21,11 +21,6 @@ export function previewHistoricalPriceEdit(
   state: State,
   payload: Extract<Command, { type: 'EditHistoricalPrice' }>['payload'],
 ): HistoricalPricePreview {
-  ensure(
-    state.household.allowHistoricalPriceEdits,
-    'HISTORICAL_PRICE_DISABLED',
-    'Historical price editing is disabled',
-  );
   const obligation = state.obligations.find(
     (item) => item.id === payload.obligationId,
   );

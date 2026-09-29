@@ -328,7 +328,6 @@ export type Command =
           | 'timezone'
           | 'locale'
           | 'telegramReportTime'
-          | 'allowHistoricalPriceEdits'
         >
       >;
     }
