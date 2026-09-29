@@ -220,6 +220,20 @@ runs. A protected selected period cannot change. Preview changed/preserved perio
 and superseded future prices. Reject recurrence incompatible with existing intervals.
 Use server rates for valuations and normal rules for allocating free credit.
 
+An administrator may enable historical price editing in household settings. The
+setting is off for existing and new households until explicitly enabled. With it
+enabled, members who may edit an obligation may add a price at a billing-period
+boundary, change an existing price, or remove a later price entry. The first active
+price entry must remain on the obligation's first day and can only be changed.
+The administrator may edit any obligation; other roles retain their normal
+authorship limits. These corrections affect only the interval up to the next
+active price entry. Existing period IDs, payments, refunds, waivers, automatic-run
+receipts and prior rule versions remain in the audit history. Revalue affected
+charges at their due-date exchange rates and reconcile payment allocations in
+their original currencies; a lower corrected price releases unused credit.
+Missing historical exchange rates reject the entire correction. A prior automatic
+run does not execute again when a correction increases its charge.
+
 Price history shows a chart followed by dated rule versions, currencies and cadence.
 Plot currencies separately. Superseded rules remain in history and paid periods
 keep their original references. Amounts can be fixed, confirmed-variable or estimates.

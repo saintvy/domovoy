@@ -44,6 +44,13 @@ but requires full-state loading and validation. Requests within a family
 serialize. The next scaling step is targeted SQL reads and writes, shorter
 transactions and measurements of memory and end-to-end latency.
 
+Historical price correction uses the same family command transaction, revision
+check and operation receipt as other financial writes. The administrator controls
+the household permission. The domain keeps prior price versions for audit, changes
+only the interval selected by the correction, and requests trusted historical
+exchange rates before recalculating charges and payment allocations. No SQL schema
+or AWS resource is added.
+
 ## Authentication and authorization
 
 Person lifecycle commands use the existing snapshot transaction and receipt, with

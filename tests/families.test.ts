@@ -253,6 +253,65 @@ describe('Family ownership, isolation and atomic PostgreSQL writes', () => {
     expect(await request('/operations/' + command.operationId)).toEqual(first);
     expect((await state()).people).toHaveLength(2);
   });
+  it('commits historical price corrections with receipts, revisions and server permissions', async () => {
+    const obligation = obligationCommand();
+    await commit([obligation]);
+    const makeCorrection = (): Extract<
+      Command,
+      { type: 'EditHistoricalPrice' }
+    > => ({
+      type: 'EditHistoricalPrice',
+      payload: {
+        obligationId: obligation.payload.obligation.id,
+        action: 'add',
+        effectiveFrom: '2026-02-01',
+        rule: {
+          ...obligation.payload.rule,
+          id: randomUUID(),
+          effectiveFrom: '2026-02-01',
+          amount: 1200,
+        },
+      },
+    });
+    await expect(commit([makeCorrection()])).rejects.toMatchObject({
+      code: 'HISTORICAL_PRICE_DISABLED',
+    });
+    await commit([
+      { type: 'UpdateHousehold', payload: { allowHistoricalPriceEdits: true } },
+    ]);
+    const ownEditor = await join(bob, 'own_editor');
+    const observer = await join(eve, 'observer');
+    await expect(
+      commit([makeCorrection()], bob, ownEditor.sessionToken),
+    ).rejects.toMatchObject({ code: 'FORBIDDEN' });
+    await expect(
+      commit([makeCorrection()], eve, observer.sessionToken),
+    ).rejects.toMatchObject({ code: 'FORBIDDEN' });
+    const command = makeCorrection();
+    const envelope1 = await envelope([command]);
+    const stale = await envelope([
+      {
+        ...command,
+        payload: {
+          ...command.payload,
+          rule: { ...command.payload.rule!, id: randomUUID() },
+        },
+      },
+    ]);
+    const first = await request('/commands', 'POST', envelope1);
+    expect(await request('/commands', 'POST', envelope1)).toEqual(first);
+    expect(await request('/operations/' + envelope1.operationId)).toEqual(
+      first,
+    );
+    await expect(request('/commands', 'POST', stale)).rejects.toMatchObject({
+      code: 'REVISION_CONFLICT',
+    });
+    const saved = await state();
+    expect(
+      saved.rules.find((item) => item.id === command.payload.rule?.id)?.amount,
+    ).toBe(1200);
+    expect(saved.household.allowHistoricalPriceEdits).toBe(true);
+  });
   it('rolls state back if saving the commit receipt fails', async () => {
     const broken: Database = {
       transaction: (work) =>

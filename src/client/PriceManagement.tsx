@@ -310,18 +310,176 @@ export function PriceChangeEditor({
   );
 }
 
-export function PriceHistory({ state, obligation, today, t, close }: Props) {
+export function PriceHistory({
+  state,
+  obligation,
+  today,
+  t,
+  close,
+  canEdit,
+  busy,
+  submit,
+}: Props & {
+  canEdit: boolean;
+  busy: boolean;
+  submit: (commands: Command[], label: string) => Promise<void>;
+}) {
+  const [editing, setEditing] = useState<{
+    action: 'add' | 'update';
+    rule?: BillingRule;
+  }>();
+  const [effectiveFrom, setEffectiveFrom] = useState('');
+  const [amount, setAmount] = useState('');
+  const [currency, setCurrency] = useState(state.household.currency);
+  const [error, setError] = useState('');
   const lockedIds = useMemo(() => lockedBillingPeriodIds(state), [state]);
-  const rules = state.rules
-    .filter((r) => r.obligationId === obligation.id)
-    .sort(
-      (a, b) =>
-        a.effectiveFrom.localeCompare(b.effectiveFrom) ||
-        a.id.localeCompare(b.id),
-    );
-  const current = rules.filter(
-    (r) => !r.superseded && (!r.effectiveTo || r.effectiveTo > r.effectiveFrom),
+  const rules = useMemo(
+    () =>
+      state.rules
+        .filter((r) => r.obligationId === obligation.id)
+        .sort(
+          (a, b) =>
+            a.effectiveFrom.localeCompare(b.effectiveFrom) ||
+            a.id.localeCompare(b.id),
+        ),
+    [state.rules, obligation.id],
   );
+  const current = useMemo(
+    () =>
+      rules.filter(
+        (r) =>
+          !r.superseded && (!r.effectiveTo || r.effectiveTo > r.effectiveFrom),
+      ),
+    [rules],
+  );
+  const availableStarts = useMemo(() => {
+    const existing = new Set(current.map((rule) => rule.effectiveFrom));
+    const obligationPeriods = state.periods.filter(
+      (period) => period.obligationId === obligation.id,
+    );
+    const forecastState = {
+      ...state,
+      obligations: [obligation],
+      rules,
+      periods: obligationPeriods,
+    };
+    const horizon = addMonths(today, 24);
+    const forecast: BillingPeriod[] = [];
+    for (
+      let from = obligation.activeFrom;
+      from < horizon;
+      from = addMonths(from, 120)
+    ) {
+      const until = [addMonths(from, 120), horizon].sort()[0];
+      forecast.push(...generatePeriods(forecastState, from, until));
+    }
+    return [
+      ...new Set([
+        ...obligationPeriods.map((period) => period.periodStart),
+        ...forecast.map((period) => period.periodStart),
+      ]),
+    ]
+      .filter((date) => !existing.has(date))
+      .sort();
+  }, [state, obligation, today, current, rules]);
+  const selectedRule = current
+    .filter((rule) => rule.effectiveFrom <= effectiveFrom)
+    .at(-1);
+  const nextRule = current.find((rule) => rule.effectiveFrom > effectiveFrom);
+  const affectedPeriods = state.periods.filter(
+    (period) =>
+      period.obligationId === obligation.id &&
+      period.periodStart >= effectiveFrom &&
+      (!nextRule || period.periodStart < nextRule.effectiveFrom),
+  );
+  function beginEdit(rule: BillingRule) {
+    setEditing({ action: 'update', rule });
+    setEffectiveFrom(rule.effectiveFrom);
+    setAmount(
+      rule.amount === undefined
+        ? ''
+        : moneyInputValue(rule.amount, rule.currency),
+    );
+    setCurrency(rule.currency);
+    setError('');
+  }
+  function beginAdd() {
+    const date = availableStarts[0] ?? '';
+    const preceding = current
+      .filter((rule) => rule.effectiveFrom <= date)
+      .at(-1);
+    setEditing({ action: 'add' });
+    setEffectiveFrom(date);
+    setAmount(
+      preceding?.amount === undefined
+        ? ''
+        : moneyInputValue(preceding.amount, preceding.currency),
+    );
+    setCurrency(preceding?.currency ?? state.household.currency);
+    setError('');
+  }
+  async function saveHistorical(event: FormEvent) {
+    event.preventDefault();
+    try {
+      if (!editing || !selectedRule || !effectiveFrom)
+        throw new Error(t('Выберите дату стоимости.', 'Select a price date.'));
+      const rule: BillingRule = {
+        ...(editing.rule ?? selectedRule),
+        id: crypto.randomUUID(),
+        effectiveFrom,
+        effectiveTo: undefined,
+        superseded: undefined,
+        amount: parseMoney(amount, currency),
+        currency,
+      };
+      await submit(
+        [
+          {
+            type: 'EditHistoricalPrice',
+            payload: {
+              obligationId: obligation.id,
+              action: editing.action,
+              effectiveFrom,
+              ...(editing.rule ? { ruleId: editing.rule.id } : {}),
+              rule,
+            },
+          },
+        ],
+        t('Правка истории стоимости', 'Price history correction'),
+      );
+    } catch (cause) {
+      setError((cause as Error).message);
+    }
+  }
+  async function removeHistorical(rule: BillingRule) {
+    if (
+      !confirm(
+        t(
+          'Удалить эту запись о стоимости и пересчитать начисления?',
+          'Delete this price entry and recalculate charges?',
+        ),
+      )
+    )
+      return;
+    try {
+      await submit(
+        [
+          {
+            type: 'EditHistoricalPrice',
+            payload: {
+              obligationId: obligation.id,
+              action: 'delete',
+              effectiveFrom: rule.effectiveFrom,
+              ruleId: rule.id,
+            },
+          },
+        ],
+        t('Удаление записи о стоимости', 'Delete price entry'),
+      );
+    } catch (cause) {
+      setError((cause as Error).message);
+    }
+  }
   const currencies = [...new Set(current.map((r) => r.currency))];
   const start = current[0]?.effectiveFrom ?? today;
   const end =
@@ -453,6 +611,9 @@ export function PriceHistory({ state, obligation, today, t, close }: Props) {
               <th>{t('Окончание', 'Until')}</th>
               <th>{t('Стоимость', 'Price')}</th>
               <th>{t('График', 'Schedule')}</th>
+              {canEdit && state.household.allowHistoricalPriceEdits && (
+                <th>{t('Действия', 'Actions')}</th>
+              )}
             </tr>
           </thead>
           <tbody>
@@ -470,11 +631,131 @@ export function PriceHistory({ state, obligation, today, t, close }: Props) {
                     : formatMoney(rule.amount, rule.currency)}
                 </td>
                 <td>{cadenceName(rule.cadence, t)}</td>
+                {canEdit && state.household.allowHistoricalPriceEdits && (
+                  <td>
+                    {!rule.superseded && (
+                      <>
+                        <button
+                          className="text-button"
+                          onClick={() => beginEdit(rule)}
+                        >
+                          {t('Изменить', 'Edit')}
+                        </button>
+                        {rule.effectiveFrom !== obligation.activeFrom && (
+                          <button
+                            className="text-button danger-text"
+                            disabled={busy}
+                            onClick={() => void removeHistorical(rule)}
+                          >
+                            {t('Удалить', 'Delete')}
+                          </button>
+                        )}
+                      </>
+                    )}
+                  </td>
+                )}
               </tr>
             ))}
           </tbody>
         </table>
       </div>
+      {error && (
+        <p className="notice danger" role="alert">
+          {error}
+        </p>
+      )}
+      {canEdit && state.household.allowHistoricalPriceEdits && (
+        <section className="price-history-editor">
+          {!editing && availableStarts.length > 0 && (
+            <button className="button secondary" onClick={beginAdd}>
+              {t('Добавить стоимость', 'Add price entry')}
+            </button>
+          )}
+          {editing && (
+            <form onSubmit={(event) => void saveHistorical(event)}>
+              <h3>
+                {editing.action === 'add'
+                  ? t('Новая запись о стоимости', 'New price entry')
+                  : t('Правка стоимости', 'Edit price entry')}
+              </h3>
+              <div className="form-grid">
+                <label className="field">
+                  <span>{t('Дата начала', 'Effective from')}</span>
+                  {editing.action === 'add' ? (
+                    <select
+                      value={effectiveFrom}
+                      onChange={(event) => {
+                        const date = event.target.value;
+                        const prior = current
+                          .filter((rule) => rule.effectiveFrom <= date)
+                          .at(-1);
+                        setEffectiveFrom(date);
+                        if (prior) {
+                          setAmount(
+                            prior.amount === undefined
+                              ? ''
+                              : moneyInputValue(prior.amount, prior.currency),
+                          );
+                          setCurrency(prior.currency);
+                        }
+                      }}
+                      required
+                    >
+                      {availableStarts.map((date) => (
+                        <option key={date}>{date}</option>
+                      ))}
+                    </select>
+                  ) : (
+                    <input value={effectiveFrom} readOnly />
+                  )}
+                </label>
+                <label className="field">
+                  <span>{t('Сумма', 'Amount')}</span>
+                  <input
+                    value={amount}
+                    onChange={(event) => setAmount(event.target.value)}
+                    inputMode="decimal"
+                    required
+                  />
+                </label>
+                <label className="field">
+                  <span>{t('Валюта', 'Currency')}</span>
+                  <select
+                    value={currency}
+                    onChange={(event) => setCurrency(event.target.value)}
+                  >
+                    {[
+                      ...new Set([currency, ...availableCurrencies(state)]),
+                    ].map((code) => (
+                      <option key={code}>{code}</option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+              <p className="muted">
+                {t('Затронутых начислений', 'Charges to recalculate')}:{' '}
+                {affectedPeriods.length}.{' '}
+                {t(
+                  'Платежи и возвраты сохранятся; распределения и остаток долга будут пересчитаны.',
+                  'Payments and refunds remain; allocations and outstanding balances will be recalculated.',
+                )}
+              </p>
+              <div className="modal-actions">
+                <button
+                  type="button"
+                  className="button secondary"
+                  onClick={() => setEditing(undefined)}
+                >
+                  {t('Отмена', 'Cancel')}
+                </button>
+                <button className="button primary" disabled={busy}>
+                  {t('Сохранить стоимость', 'Save price')}
+                </button>
+              </div>
+            </form>
+          )}
+        </section>
+      )}
       {protectedPeriods.length > 0 && (
         <details className="price-history-recorded">
           <summary>

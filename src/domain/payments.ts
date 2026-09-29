@@ -122,6 +122,7 @@ export function allocateToPeriod(
   options: {
     id: string;
     baseBudget?: number;
+    originalBudget?: number;
     effectiveDate?: string;
     index?: SettlementIndex;
   },
@@ -137,6 +138,14 @@ export function allocateToPeriod(
       options.baseBudget <= baseAvailable,
       'OVER_ALLOCATED',
       'Распределения и возвраты превышают платёж',
+    );
+  if (options.originalBudget !== undefined)
+    ensure(
+      Number.isSafeInteger(options.originalBudget) &&
+        options.originalBudget >= 0 &&
+        options.originalBudget <= originalAvailable,
+      'OVER_ALLOCATED',
+      'Original payment budget is exceeded',
     );
   const expected = period.expectedAmount;
   if (
@@ -171,14 +180,15 @@ export function allocateToPeriod(
             context,
           ).exchangeRate;
   const originalBudget =
-    options.baseBudget === undefined || options.baseBudget === baseAvailable
+    options.originalBudget ??
+    (options.baseBudget === undefined || options.baseBudget === baseAvailable
       ? originalAvailable
       : baseAvailable === 0
         ? 0
         : Number(
             (BigInt(originalAvailable) * BigInt(options.baseBudget)) /
               BigInt(baseAvailable),
-          );
+          ));
   const paymentAmount = sourceMinorForTarget(
     remaining,
     payment.currency,
@@ -191,18 +201,17 @@ export function allocateToPeriod(
     convertMinorAmount(paymentAmount, payment.currency, rule.currency, rate),
   );
   if (!paymentAmount || !periodAmount) return;
-  const amount =
+  const amount = Math.min(
+    options.baseBudget ?? baseAvailable,
     paymentAmount === originalAvailable
       ? baseAvailable
-      : Math.min(
-          options.baseBudget ?? baseAvailable,
-          convertMinorAmount(
-            paymentAmount,
-            payment.currency,
-            state.household.currency,
-            payment.exchangeRate!,
-          ),
-        );
+      : convertMinorAmount(
+          paymentAmount,
+          payment.currency,
+          state.household.currency,
+          payment.exchangeRate!,
+        ),
+  );
   return {
     id: options.id,
     paymentId: payment.id,

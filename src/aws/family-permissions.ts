@@ -23,6 +23,7 @@ const allowedChanges = new Set([
   'ArchiveObligation',
   'UpdateObligationSchedule',
   'ChangeBillingRule',
+  'EditHistoricalPrice',
   'WaivePeriod',
   'ConfirmPeriodAmount',
   'AllocatePayment',
@@ -110,7 +111,7 @@ export function authorizeFamilyCommands(
       (type === 'UpdateObligation' &&
         (payload.patch?.activeFrom !== undefined ||
           payload.patch?.activeTo !== undefined));
-    if (lifecycleEdit) {
+    if (lifecycleEdit || type === 'EditHistoricalPrice') {
       // Every lifecycle policy can change allocations, even keep_credit. An obligation's
       // creator must not indirectly edit another person's payments through this route.
       // Conservatively require ownership of every payment linked to this obligation.
@@ -134,16 +135,20 @@ export function authorizeFamilyCommands(
         'FORBIDDEN',
         403,
       );
-      // Lifecycle edits also clamp or disable automatic schedules, including disabled
-      // schedules. Their ownership is independent of the obligation's creator.
-      const affectedSchedules = (state.automaticPayments ?? []).filter(
-        (schedule) => schedule.obligationId === payload.obligationId,
-      );
-      check(
-        affectedSchedules.every((schedule) => owns(schedules.get(schedule.id))),
-        'FORBIDDEN',
-        403,
-      );
+      if (lifecycleEdit) {
+        // Lifecycle edits also clamp or disable automatic schedules, including disabled
+        // schedules. Their ownership is independent of the obligation's creator.
+        const affectedSchedules = (state.automaticPayments ?? []).filter(
+          (schedule) => schedule.obligationId === payload.obligationId,
+        );
+        check(
+          affectedSchedules.every((schedule) =>
+            owns(schedules.get(schedule.id)),
+          ),
+          'FORBIDDEN',
+          403,
+        );
+      }
     }
   }
 }

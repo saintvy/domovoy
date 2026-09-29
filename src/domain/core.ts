@@ -15,13 +15,19 @@ import {
   periodBaseAmount,
   valuePayment,
   valuePeriod,
+  valueInBase,
 } from './currency';
 import {
   allocateToPeriod,
   executeAutomaticPayments,
   settleObligationCredits,
 } from './payments';
-import { installBillingRuleChange, previewBillingRuleChange } from './billing';
+import {
+  installBillingRuleChange,
+  previewBillingRuleChange,
+  installHistoricalPriceEdit,
+  previewHistoricalPriceEdit,
+} from './billing';
 import {
   applyObligationSchedule,
   archivePerson,
@@ -748,6 +754,7 @@ export function initializeDefaults(s: State): void {
   s.automaticPayments ??= [];
   s.automaticPaymentRuns ??= [];
   s.household.currencies ??= [s.household.currency];
+  s.household.allowHistoricalPriceEdits ??= false;
   s.household.telegramReportTime ??= {
     hour: 9,
     timeZone: s.household.timezone,
@@ -1274,6 +1281,186 @@ export function applyCommands(
         for (const period of changed) valuePeriod(period, s, context);
         settleObligationCredits(s, context, c.payload.rule.obligationId);
         refs.push(preview.rule.id, ...preview.changedPeriodIds);
+        break;
+      }
+      case 'EditHistoricalPrice': {
+        const preview = previewHistoricalPriceEdit(s, c.payload);
+        const affected = new Set(preview.affectedPeriodIds);
+        const previousRule = s.rules.find(
+          (item) =>
+            item.id === (preview.removedRuleId ?? preview.previousRuleId),
+        )!;
+        const targetRule =
+          preview.rule ??
+          s.rules.find((item) => item.id === preview.previousRuleId)!;
+        const changedFinancially = new Set(
+          s.periods
+            .filter((item) => affected.has(item.id))
+            .filter(
+              (item) =>
+                item.expectedAmount !== targetRule.amount ||
+                item.amountConfirmed !==
+                  (targetRule.amountMode !== 'estimate' &&
+                    targetRule.amount !== undefined) ||
+                s.rules.find((rule) => rule.id === item.ruleVersionId)
+                  ?.currency !== targetRule.currency,
+            )
+            .map((item) => item.id),
+        );
+        // Preserve original due-date FX provenance for every repriced period.
+        // Entries outside this set retain their original valuation unchanged.
+        const periodBefore = s.periods
+          .filter((item) => affected.has(item.id))
+          .filter((item) => changedFinancially.has(item.id))
+          .map((item) => ({
+            id: item.id,
+            ruleVersionId: item.ruleVersionId,
+            expectedAmount: item.expectedAmount,
+            amountConfirmed: item.amountConfirmed,
+            baseExpectedAmount: item.baseExpectedAmount,
+            baseCurrency: item.baseCurrency,
+            exchangeRate: item.exchangeRate,
+            exchangeRateDate: item.exchangeRateDate,
+            exchangeRateSource: item.exchangeRateSource,
+          }));
+        const previousCurrency = previousRule.currency;
+        const allocationCount = s.allocations.length;
+        const activeAllocations = s.allocations
+          .filter(
+            (item) =>
+              changedFinancially.has(item.billingPeriodId) && !item.reversedBy,
+          )
+          .sort(
+            (a, b) =>
+              a.createdAt.localeCompare(b.createdAt) ||
+              a.id.localeCompare(b.id),
+          );
+        const reversedAllocations = s.allocations.filter(
+          (item) =>
+            changedFinancially.has(item.billingPeriodId) && item.reversedBy,
+        );
+        const reversedBefore = reversedAllocations.map((item) => ({
+          id: item.id,
+          periodAmount: item.periodAmount ?? item.amount,
+        }));
+        const priorAmounts = activeAllocations.map((item) => ({
+          id: item.id,
+          amount: item.amount,
+          paymentAmount: item.paymentAmount ?? item.amount,
+          periodAmount: item.periodAmount ?? item.amount,
+        }));
+        for (const item of activeAllocations) {
+          item.amount = 0;
+          item.paymentAmount = 0;
+          item.periodAmount = 0;
+        }
+        const changed = installHistoricalPriceEdit(s, preview);
+        for (const period of changed) valuePeriod(period, s, context);
+        for (const item of reversedAllocations) {
+          const payment = s.payments.find(
+            (value) => value.id === item.paymentId,
+          )!;
+          const period = s.periods.find(
+            (value) => value.id === item.billingPeriodId,
+          )!;
+          const rule = s.rules.find(
+            (value) => value.id === period.ruleVersionId,
+          )!;
+          item.periodAmount =
+            period.expectedAmount === undefined
+              ? 0
+              : Math.min(
+                  period.expectedAmount,
+                  valueInBase(
+                    item.paymentAmount ?? item.amount,
+                    payment.currency,
+                    payment.paidAt,
+                    rule.currency,
+                    context,
+                  ).baseAmount,
+                );
+        }
+        for (let index = 0; index < activeAllocations.length; index++) {
+          const item = activeAllocations[index],
+            old = priorAmounts[index];
+          const payment = s.payments.find(
+            (value) => value.id === item.paymentId,
+          )!;
+          const period = s.periods.find(
+            (value) => value.id === item.billingPeriodId,
+          )!;
+          const allocation = allocateToPeriod(s, payment, period, context, {
+            id: item.id,
+            baseBudget: old.amount,
+            originalBudget: old.paymentAmount,
+            effectiveDate: item.effectiveDate,
+          });
+          if (allocation) {
+            item.amount = allocation.amount;
+            item.paymentAmount = allocation.paymentAmount;
+            item.periodAmount = allocation.periodAmount;
+          }
+        }
+        if (changedFinancially.size)
+          settleObligationCredits(s, context, c.payload.obligationId);
+        const allocationCorrections = activeAllocations.flatMap(
+          (item, index) => {
+            const before = priorAmounts[index];
+            return item.amount === before.amount &&
+              item.paymentAmount === before.paymentAmount &&
+              item.periodAmount === before.periodAmount
+              ? []
+              : [
+                  {
+                    id: item.id,
+                    before,
+                    after: {
+                      amount: item.amount,
+                      paymentAmount: item.paymentAmount,
+                      periodAmount: item.periodAmount,
+                    },
+                  },
+                ];
+          },
+        );
+        details = {
+          action: c.payload.action,
+          effectiveFrom: c.payload.effectiveFrom,
+          previousRuleId: preview.previousRuleId,
+          previousCurrency,
+          resultingCurrency: (
+            preview.rule ??
+            s.rules.find((item) => item.id === preview.previousRuleId)
+          )?.currency,
+          ...(preview.removedRuleId
+            ? { removedRuleId: preview.removedRuleId }
+            : {}),
+          ...(preview.rule ? { ruleId: preview.rule.id } : {}),
+          affectedPeriodCount: preview.affectedPeriodIds.length,
+          periodBefore,
+          allocationCorrections,
+          reversedAllocationCorrections: reversedAllocations.flatMap(
+            (item, index) =>
+              item.periodAmount === reversedBefore[index].periodAmount
+                ? []
+                : [
+                    {
+                      id: item.id,
+                      before: reversedBefore[index].periodAmount,
+                      after: item.periodAmount,
+                    },
+                  ],
+          ),
+          creditAllocationIds: s.allocations
+            .slice(allocationCount)
+            .map((item) => item.id),
+        };
+        refs.push(
+          c.payload.obligationId,
+          ...preview.affectedPeriodIds,
+          ...activeAllocations.map((item) => item.id),
+          ...reversedAllocations.map((item) => item.id),
+        );
         break;
       }
       case 'UpdateHousehold': {

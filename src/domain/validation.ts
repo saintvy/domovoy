@@ -281,6 +281,7 @@ const householdFields = {
   timezone: timeZone,
   locale: z.enum(['ru', 'en']),
   telegramReportTime: dailyReportTime.optional(),
+  allowHistoricalPriceEdits: z.boolean().optional(),
 };
 const audit = z
   .object({
@@ -433,6 +434,18 @@ export const commandSchema = z.discriminatedUnion('type', [
   c(
     'ChangeBillingRule',
     z.object({ rule, fromPeriodId: id.optional() }).strict(),
+  ),
+  c(
+    'EditHistoricalPrice',
+    z
+      .object({
+        obligationId: id,
+        action: z.enum(['add', 'update', 'delete']),
+        effectiveFrom: date,
+        ruleId: id.optional(),
+        rule: rule.optional(),
+      })
+      .strict(),
   ),
   c('UpdateHousehold', z.object(householdFields).partial().strict()),
   c(

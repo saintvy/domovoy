@@ -17,6 +17,7 @@ export function createEmptyState(): State {
       currency: 'CZK',
       timezone: 'Europe/Prague',
       locale: 'ru',
+      allowHistoricalPriceEdits: false,
     },
     people: [],
     providers: [],

@@ -36,6 +36,15 @@
   margin-top: 20px;
   font-size: 13px;
 }
+.price-history-editor {
+  margin-top: 20px;
+}
+.price-history-editor .form-grid {
+  margin-top: 12px;
+}
+.price-history-table .text-button + .text-button {
+  margin-left: 8px;
+}
 .price-history-recorded summary {
   cursor: pointer;
 }

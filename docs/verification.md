@@ -43,6 +43,10 @@ cleans only its own random synthetic family and account records.
 
 Browser fixtures intercept API calls and use fictional household data. They test
 UI behavior, not real Google consent, SES delivery or production RDS connectivity.
+Historical price correction coverage includes the household switch, first-day
+entry protection, interval edits, currency revaluation, allocation reconciliation,
+authorization and the price-history browser workflow. The browser fixture does
+not substitute for PostgreSQL receipt and revision tests.
 Local JWT tests exercise signature verification using test-only keys; the normal
 development server has no fake-identity mode.
 

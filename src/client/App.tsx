@@ -2157,7 +2157,7 @@ export default function App() {
                   </div>
                   {state && financial && (
                     <HouseholdPreferences
-                      key={`${state.household.currency}:${state.household.color ?? ''}`}
+                      key={`${state.household.currency}:${state.household.color ?? ''}:${state.household.allowHistoricalPriceEdits ?? false}`}
                       state={state}
                       t={t}
                       isAdmin={isAdmin}

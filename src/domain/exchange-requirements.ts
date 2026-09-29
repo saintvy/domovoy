@@ -2,7 +2,12 @@ import type { Command, State } from './types';
 import { generatePeriods } from './core';
 import { automaticGenerationWindow } from './payments';
 import { validateCommands } from './validation';
-import { installBillingRuleChange, previewBillingRuleChange } from './billing';
+import {
+  installBillingRuleChange,
+  previewBillingRuleChange,
+  installHistoricalPriceEdit,
+  previewHistoricalPriceEdit,
+} from './billing';
 import {
   archiveSchedulePayload,
   deleteObligation,
@@ -142,10 +147,37 @@ export function requiredExchangeRates(
           periodQuote(period);
         break;
       }
-      case 'UpdateHousehold':
+      case 'EditHistoricalPrice': {
+        const preview = previewHistoricalPriceEdit(draft, command.payload);
+        const affected = new Set(preview.affectedPeriodIds);
+        for (const period of installHistoricalPriceEdit(draft, preview))
+          periodQuote(period);
+        for (const allocation of draft.allocations.filter((item) =>
+          affected.has(item.billingPeriodId),
+        ))
+          allocationQuote(
+            draft.payments.find((item) => item.id === allocation.paymentId),
+            allocation.billingPeriodId,
+          );
+        // Reconciliation can release credit. The normal settlement pass may then
+        // allocate that credit to any active price version of this obligation.
+        for (const payment of draft.payments.filter(
+          (item) => item.obligationId === command.payload.obligationId,
+        ))
+          for (const activeRule of draft.rules.filter(
+            (item) =>
+              item.obligationId === command.payload.obligationId &&
+              !item.superseded,
+          ))
+            quote(payment.currency, payment.paidAt, activeRule.currency);
+        break;
+      }
+      case 'UpdateHousehold': {
+        const oldCurrency = draft.household.currency;
+        Object.assign(draft.household, command.payload);
         if (
           command.payload.currency &&
-          command.payload.currency !== draft.household.currency
+          command.payload.currency !== oldCurrency
         ) {
           draft.household.currency = command.payload.currency;
           for (const payment of draft.payments)
@@ -153,6 +185,7 @@ export function requiredExchangeRates(
           for (const period of draft.periods) periodQuote(period);
         }
         break;
+      }
       case 'AddAutomaticPayment':
         (draft.automaticPayments ??= []).push(command.payload.schedule);
         break;
@@ -201,6 +234,7 @@ export function requiredExchangeRates(
         'GeneratePeriods',
         'ConfirmPeriodAmount',
         'ChangeBillingRule',
+        'EditHistoricalPrice',
         'UpdateObligationSchedule',
         'ArchiveObligation',
         'UpdateHousehold',

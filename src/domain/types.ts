@@ -19,6 +19,7 @@ export interface Household {
   timezone: string;
   locale: 'ru' | 'en';
   telegramReportTime?: DailyReportTime;
+  allowHistoricalPriceEdits?: boolean;
 }
 export interface Person {
   id: string;
@@ -305,6 +306,16 @@ export type Command =
       payload: { rule: BillingRule; fromPeriodId?: string };
     }
   | {
+      type: 'EditHistoricalPrice';
+      payload: {
+        obligationId: string;
+        action: 'add' | 'update' | 'delete';
+        effectiveFrom: ISODate;
+        ruleId?: string;
+        rule?: BillingRule;
+      };
+    }
+  | {
       type: 'UpdateHousehold';
       payload: Partial<
         Pick<
@@ -317,6 +328,7 @@ export type Command =
           | 'timezone'
           | 'locale'
           | 'telegramReportTime'
+          | 'allowHistoricalPriceEdits'
         >
       >;
     }

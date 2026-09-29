@@ -186,3 +186,188 @@ test('price history separates currency scales and is readable by observers on mo
   await expect(page.getByRole('dialog')).toHaveCount(0);
   expect(server.errors).toEqual([]);
 });
+
+test('administrator enables historical price editing and corrects the first price', async ({
+  page,
+}) => {
+  const server = await mockGoogleHousehold(page);
+  const original = server.read();
+  const obligation = original.obligations.find((item) =>
+    item.title.includes('Netflix'),
+  )!;
+  const first = original.rules.find(
+    (rule) =>
+      rule.obligationId === obligation.id &&
+      rule.effectiveFrom === obligation.activeFrom,
+  )!;
+  const initialAmount = first.amount!;
+  await server.open();
+  await page.getByRole('button', { name: 'Настройки', exact: true }).click();
+  await page
+    .getByRole('checkbox', { name: 'Разрешить правку истории стоимости' })
+    .check();
+  await page
+    .getByRole('button', { name: 'Сохранить настройки', exact: true })
+    .click();
+  await expect
+    .poll(() => server.read().household.allowHistoricalPriceEdits)
+    .toBe(true);
+  await page.getByRole('button', { name: /^Обязательства/ }).click();
+  await page
+    .locator('.expense-row')
+    .filter({ hasText: 'Netflix' })
+    .first()
+    .click();
+  await page
+    .getByRole('button', { name: 'История стоимости', exact: true })
+    .click();
+  const dialog = page.getByRole('dialog');
+  await dialog
+    .getByRole('row')
+    .filter({ hasText: first.effectiveFrom })
+    .getByRole('button', { name: 'Изменить', exact: true })
+    .click();
+  await dialog.getByLabel('Сумма', { exact: true }).fill('399');
+  await dialog
+    .getByRole('button', { name: 'Сохранить стоимость', exact: true })
+    .click();
+  await expect
+    .poll(
+      () =>
+        server
+          .read()
+          .rules.find(
+            (rule) =>
+              rule.obligationId === obligation.id &&
+              !rule.superseded &&
+              rule.effectiveFrom === obligation.activeFrom,
+          )?.amount,
+    )
+    .toBe(39900);
+  expect(server.read().rules.find((rule) => rule.id === first.id)?.amount).toBe(
+    initialAmount,
+  );
+  expect(
+    server.requests
+      .flatMap((request) => request.commands)
+      .some((command) => command.type === 'EditHistoricalPrice'),
+  ).toBe(true);
+  expect(server.errors).toEqual([]);
+});
+
+test('price history opens for an obligation older than the 25-year forecast limit', async ({
+  page,
+}) => {
+  const server = await mockGoogleHousehold(page);
+  const state = server.read();
+  const obligation = state.obligations.find((item) =>
+    item.title.includes('Netflix'),
+  )!;
+  const rule = state.rules.find((item) => item.obligationId === obligation.id)!;
+  obligation.activeFrom = '1995-09-12';
+  rule.effectiveFrom = obligation.activeFrom;
+  rule.anchor = obligation.activeFrom;
+  await server.open();
+  await page
+    .locator('.expense-row')
+    .filter({ hasText: 'Netflix' })
+    .first()
+    .click();
+  await page
+    .getByRole('button', { name: 'История стоимости', exact: true })
+    .click();
+  await expect(
+    page
+      .getByRole('dialog')
+      .getByRole('heading', { name: 'История стоимости' }),
+  ).toBeVisible();
+  expect(server.errors).toEqual([]);
+});
+
+test('price history controls add and remove an intermediate price entry', async ({
+  page,
+}) => {
+  const server = await mockGoogleHousehold(page);
+  const state = server.read();
+  state.household.allowHistoricalPriceEdits = true;
+  const obligation = state.obligations.find((item) =>
+    item.title.includes('Netflix'),
+  )!;
+  const initialRule = state.rules.find(
+    (rule) => rule.obligationId === obligation.id && !rule.superseded,
+  )!;
+  const date = state.periods
+    .filter(
+      (period) =>
+        period.obligationId === obligation.id &&
+        period.periodStart > initialRule.effectiveFrom,
+    )
+    .sort((a, b) => a.periodStart.localeCompare(b.periodStart))[0].periodStart;
+  await server.open();
+  const openHistory = async () => {
+    await page
+      .locator('.expense-row')
+      .filter({ hasText: 'Netflix' })
+      .first()
+      .click();
+    await page
+      .getByRole('button', { name: 'История стоимости', exact: true })
+      .click();
+  };
+  await openHistory();
+  let dialog = page.getByRole('dialog');
+  await expect(
+    dialog
+      .getByRole('row')
+      .filter({ hasText: initialRule.effectiveFrom })
+      .getByRole('button', { name: 'Удалить', exact: true }),
+  ).toHaveCount(0);
+  await dialog.getByRole('button', { name: 'Добавить стоимость' }).click();
+  await dialog.getByLabel('Дата начала').selectOption(date);
+  await dialog.getByLabel('Сумма', { exact: true }).fill('499');
+  await dialog.getByRole('button', { name: 'Сохранить стоимость' }).click();
+  await expect
+    .poll(
+      () =>
+        server
+          .read()
+          .rules.find(
+            (rule) =>
+              !rule.superseded &&
+              rule.obligationId === obligation.id &&
+              rule.effectiveFrom === date,
+          )?.amount,
+    )
+    .toBe(49900);
+  await openHistory();
+  dialog = page.getByRole('dialog');
+  page.once('dialog', (confirmation) => void confirmation.accept());
+  await dialog
+    .getByRole('row')
+    .filter({ hasText: date })
+    .getByRole('button', { name: 'Удалить', exact: true })
+    .click();
+  await expect
+    .poll(() =>
+      server
+        .read()
+        .rules.some(
+          (rule) =>
+            !rule.superseded &&
+            rule.obligationId === obligation.id &&
+            rule.effectiveFrom === date,
+        ),
+    )
+    .toBe(false);
+  expect(
+    server
+      .read()
+      .rules.some(
+        (rule) =>
+          !rule.superseded &&
+          rule.obligationId === obligation.id &&
+          rule.effectiveFrom === initialRule.effectiveFrom,
+      ),
+  ).toBe(true);
+  expect(server.errors).toEqual([]);
+});
